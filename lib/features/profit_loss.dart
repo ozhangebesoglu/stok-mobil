@@ -97,72 +97,133 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
       dateFilter = "date LIKE '$currentMonth%'";
     }
 
-    // Manuel eklenen gelirler
-    final List<Map<String, dynamic>> manualIncomes = await db.query(
-      'manual_incomes',
-      where: dateFilter,
-      orderBy: 'date DESC',
-    );
+    // Tüm gelir kaynaklarını toplayacağımız ana liste
+    List<Map<String, dynamic>> allIncomes = [];
 
-    // Borç ödemeleri (ödeme alınan satışlar)
-    final List<Map<String, dynamic>> debtPayments = await db.query(
-      'sales',
-      where:
-          dateFilter != null
-              ? "$dateFilter AND productName = 'Borç Ödemesi' AND isPaid = 1"
-              : "productName = 'Borç Ödemesi' AND isPaid = 1",
-      orderBy: 'date DESC',
-    );
+    try {
+      // Manuel eklenen gelirler
+      final List<Map<String, dynamic>> manualIncomes = await db.query(
+        'manual_incomes',
+        where: dateFilter,
+        orderBy: 'date DESC',
+      );
 
-    // Borç ödemelerini manuel gelirler gibi formatlayalım
-    for (var payment in debtPayments) {
-      final Map<String, dynamic> incomeFormat = {
-        'id': payment['id'],
-        'description': 'Müşteri Ödemesi: ${payment['customerName']}',
-        'amount': payment['amount'],
-        'date': payment['date'],
-        'category': 'Müşteri Ödemesi',
-        'sourceType': 'payment', // Kaynak tipini belirtelim
-        'sourceId': payment['id'],
-      };
-      manualIncomes.add(incomeFormat);
+      // Manuel gelirleri ana listeye ekle
+      allIncomes.addAll(
+        manualIncomes
+            .map(
+              (income) => {
+                'id': income['id'],
+                'description': income['description'],
+                'amount': income['amount'],
+                'date': income['date'],
+                'category': income['category'],
+                'sourceType': 'manual',
+                'sourceId': income['id'],
+              },
+            )
+            .toList(),
+      );
+
+      // Borç ödemeleri (ödeme alınan satışlar)
+      final List<Map<String, dynamic>> debtPayments = await db.query(
+        'sales',
+        where:
+            dateFilter != null
+                ? "$dateFilter AND productName = 'Borç Ödemesi' AND isPaid = 1"
+                : "productName = 'Borç Ödemesi' AND isPaid = 1",
+        orderBy: 'date DESC',
+      );
+
+      // Borç ödemelerini ana listeye ekle
+      allIncomes.addAll(
+        debtPayments
+            .map(
+              (payment) => {
+                'id': payment['id'],
+                'description': 'Müşteri Ödemesi: ${payment['customerName']}',
+                'amount': payment['amount'],
+                'date': payment['date'],
+                'category': 'Müşteri Ödemesi',
+                'sourceType': 'payment',
+                'sourceId': payment['id'],
+              },
+            )
+            .toList(),
+      );
+
+      // Restoran satışları
+      final List<Map<String, dynamic>> restaurantSales = await db.query(
+        'restaurant_sales',
+        where: dateFilter,
+        orderBy: 'date DESC',
+      );
+
+      // Restoran satışlarını ana listeye ekle
+      allIncomes.addAll(
+        restaurantSales
+            .map(
+              (sale) => {
+                'id': sale['id'],
+                'description': 'Restoran Satışı: ${sale['restaurant']}',
+                'amount': sale['amount'],
+                'date': sale['date'],
+                'category': 'Restoran Satışı',
+                'sourceType': 'restaurant',
+                'sourceId': sale['id'],
+              },
+            )
+            .toList(),
+      );
+
+      // Normal satışlar
+      final List<Map<String, dynamic>> normalSales = await db.query(
+        'sales',
+        where:
+            dateFilter != null
+                ? "$dateFilter AND productName != 'Borç Ödemesi' AND isPaid = 1"
+                : "productName != 'Borç Ödemesi' AND isPaid = 1",
+        orderBy: 'date DESC',
+      );
+
+      // Normal satışları ana listeye ekle
+      allIncomes.addAll(
+        normalSales
+            .map(
+              (sale) => {
+                'id': sale['id'],
+                'description':
+                    'Müşteri Satışı: ${sale['customerName']} - ${sale['productName']}',
+                'amount': sale['amount'],
+                'date': sale['date'],
+                'category': 'Müşteri Satışı',
+                'sourceType': 'sale',
+                'sourceId': sale['id'],
+              },
+            )
+            .toList(),
+      );
+
+      // Tarihe göre sıralayalım (en yeniden en eskiye)
+      allIncomes.sort((a, b) {
+        DateTime dateA = DateFormat(
+          'yyyy-MM-dd HH:mm:ss',
+        ).parse(a['date'].toString());
+        DateTime dateB = DateFormat(
+          'yyyy-MM-dd HH:mm:ss',
+        ).parse(b['date'].toString());
+        return dateB.compareTo(dateA);
+      });
+
+      setState(() {
+        _incomes = allIncomes;
+      });
+    } catch (e) {
+      print('Müşteri işlem geçmişi yüklenirken hata: $e');
+      setState(() {
+        _incomes = [];
+      });
     }
-
-    // Restoran satışları
-    final List<Map<String, dynamic>> restaurantSales = await db.query(
-      'restaurant_sales',
-      where: dateFilter,
-      orderBy: 'date DESC',
-    );
-
-    // Restoran satışlarını aynı formata çevirelim
-    for (var sale in restaurantSales) {
-      final Map<String, dynamic> incomeFormat = {
-        'id': sale['id'],
-        'description': 'Restoran Satışı: ${sale['restaurant']}',
-        'amount': sale['amount'],
-        'date': sale['date'],
-        'category': 'Restoran Satışı',
-        'sourceType': 'restaurant', // Kaynak tipini belirtelim
-        'sourceId': sale['id'],
-      };
-      manualIncomes.add(incomeFormat);
-    }
-
-    // Tarihe göre sıralayalım (en yeniden en eskiye)
-    manualIncomes.sort((a, b) {
-      DateTime dateA = DateFormat(
-        'yyyy-MM-dd HH:mm:ss',
-      ).parse(a['date'].toString());
-      DateTime dateB = DateFormat(
-        'yyyy-MM-dd HH:mm:ss',
-      ).parse(b['date'].toString());
-      return dateB.compareTo(dateA);
-    });
-
-    setState(() {
-      _incomes = manualIncomes;
-    });
   }
 
   Future<void> _calculateIncome() async {

@@ -1067,46 +1067,47 @@ class _CustomerManagementPageState extends State<CustomerManagementPage>
   Future<List<Map<String, dynamic>>> _loadCustomerHistory(
     int customerId,
   ) async {
+    List<Map<String, dynamic>> transactions = [];
+
     try {
       final db = await DatabaseHelper().database;
-      final List<Map<String, dynamic>> allTransactions = [];
 
-      // Satışlar
+      // Satışları getir (Borç Ödemeleri dahil)
       final List<Map<String, dynamic>> sales = await db.query(
         'sales',
         where: 'customerId = ?',
         whereArgs: [customerId],
+        orderBy: 'date DESC',
       );
 
-      // Ödemeler
-      final List<Map<String, dynamic>> payments = await db.query(
-        'sales',
-        where: 'customerId = ? AND productName = ?',
-        whereArgs: [customerId, 'Borç Ödemesi'],
-      );
-
-      // İşlem tipini ekle
+      // Her satış işlemini transaction listesine ekle
       for (var sale in sales) {
+        Map<String, dynamic> transaction = Map<String, dynamic>.from(sale);
+
+        // İşlem tipini belirle
         if (sale['productName'] == 'Borç Ödemesi') {
-          sale['transactionType'] = 'payment';
+          transaction['transactionType'] = 'payment';
         } else if (sale['isPaid'] == 1) {
-          sale['transactionType'] = 'paid_sale';
+          transaction['transactionType'] = 'paid_sale';
         } else {
-          sale['transactionType'] = 'sale';
+          transaction['transactionType'] = 'sale';
         }
+
+        transactions.add(transaction);
       }
 
-      // Tüm işlemleri birleştir
-      allTransactions.addAll(sales);
-
       // Tarihe göre sırala (en yeniden en eskiye)
-      allTransactions.sort((a, b) {
-        DateTime dateA = DateFormat('yyyy-MM-dd HH:mm:ss').parse(a['date']);
-        DateTime dateB = DateFormat('yyyy-MM-dd HH:mm:ss').parse(b['date']);
+      transactions.sort((a, b) {
+        DateTime dateA = DateFormat(
+          'yyyy-MM-dd HH:mm:ss',
+        ).parse(a['date'].toString());
+        DateTime dateB = DateFormat(
+          'yyyy-MM-dd HH:mm:ss',
+        ).parse(b['date'].toString());
         return dateB.compareTo(dateA); // Ters sıralama (en yeni en üstte)
       });
 
-      return allTransactions;
+      return transactions;
     } catch (e) {
       print('Müşteri işlem geçmişi yüklenirken hata: $e');
       return [];

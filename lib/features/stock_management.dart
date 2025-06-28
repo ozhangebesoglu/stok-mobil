@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../models/product.dart';
@@ -7,10 +8,13 @@ import '../models/expense.dart';
 import '../providers/stock_provider.dart';
 import '../widgets/custom_text_field.dart';
 import '../services/database/database_helper.dart';
+import '../core/utils/logger.dart';
 
 class StockManagementPage extends StatefulWidget {
+  const StockManagementPage({super.key});
+
   @override
-  _StockManagementPageState createState() => _StockManagementPageState();
+  State<StockManagementPage> createState() => _StockManagementPageState();
 }
 
 class _StockManagementPageState extends State<StockManagementPage> {
@@ -28,6 +32,11 @@ class _StockManagementPageState extends State<StockManagementPage> {
   @override
   void initState() {
     super.initState();
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    await Provider.of<StockProvider>(context, listen: false).loadProducts();
     _loadCategories();
   }
 
@@ -35,7 +44,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
     final products =
         Provider.of<StockProvider>(context, listen: false).products;
     final categories = products.map((p) => p.category).toSet().toList();
-      setState(() {
+    setState(() {
       _categories = ['Tümü', ...categories];
     });
   }
@@ -65,19 +74,22 @@ class _StockManagementPageState extends State<StockManagementPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+
         return Container(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: colorScheme.surface,
             borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(20),
-              topRight: Radius.circular(20),
+              topLeft: Radius.circular(28),
+              topRight: Radius.circular(28),
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(24.0),
             child: Form(
               key: _formKey,
               child: SingleChildScrollView(
@@ -90,19 +102,22 @@ class _StockManagementPageState extends State<StockManagementPage> {
                       children: [
                         Text(
                           'Yeni Ürün Ekle',
-                          style: TextStyle(
-                            fontSize: 18,
+                          style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
                           ),
                         ),
                         IconButton(
-                          icon: Icon(Icons.close),
+                          icon: Icon(
+                            Icons.close,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                           onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
-                    Divider(),
-                    SizedBox(height: 8),
+                    Divider(color: colorScheme.outline.withAlpha(51)),
+                    SizedBox(height: 16),
                     CustomTextField(
                       labelText: 'Ürün Adı',
                       controller: _nameController,
@@ -173,23 +188,25 @@ class _StockManagementPageState extends State<StockManagementPage> {
                         ),
                       ],
                     ),
-                    SizedBox(height: 16),
+                    SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: _addProduct,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          padding: EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: colorScheme.primary,
+                          foregroundColor: colorScheme.onPrimary,
+                          padding: EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(16),
                           ),
+                          elevation: 1,
                         ),
                         child: Text(
                           'Kaydet',
                           style: TextStyle(
                             fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -207,45 +224,90 @@ class _StockManagementPageState extends State<StockManagementPage> {
   Future<void> _addProduct() async {
     if (_formKey.currentState!.validate()) {
       try {
+        if (kDebugMode) {
+          Logger.debug('Form validation passed, starting product addition...');
+        }
+
         final quantity = double.parse(_quantityController.text);
         final purchasePrice = double.parse(_purchasePriceController.text);
 
         final product = Product(
-          name: _nameController.text,
-          category: _categoryController.text,
+          name: _nameController.text.trim(),
+          category: _categoryController.text.trim(),
           quantity: quantity,
-          unit: _unitController.text,
+          unit: _unitController.text.trim(),
           purchasePrice: purchasePrice,
           sellingPrice: double.parse(_sellingPriceController.text),
         );
 
-        // Ürünü ekle
-        await Provider.of<StockProvider>(
+        if (kDebugMode) {
+          Logger.debug('Product created: ${product.toString()}');
+          Logger.debug('Product isValid: ${product.isValid}');
+        }
+
+        // Ürünü ekle ve sonucu kontrol et
+        final stockProvider = Provider.of<StockProvider>(
           context,
           listen: false,
-        ).addProduct(product);
-
-        // Stok alış maliyetini gider olarak ekle
-        final totalCost = quantity * purchasePrice;
-        await _addStockPurchaseExpense(product.name, totalCost);
-
-        _nameController.clear();
-        _categoryController.clear();
-        _quantityController.clear();
-        _unitController.clear();
-        _purchasePriceController.clear();
-        _sellingPriceController.clear();
-
-        // Kategorileri güncelle
-        _loadCategories();
-
-        Navigator.of(context).pop();
-
-        _showSuccessMessage(
-          'Ürün başarıyla eklendi ve alış maliyeti gider olarak kaydedildi',
         );
+        final success = await stockProvider.addProduct(product);
+
+        if (kDebugMode) {
+          Logger.debug('AddProduct result: $success');
+          Logger.debug('Provider error: ${stockProvider.errorMessage}');
+          Logger.debug(
+            'Products count after add: ${stockProvider.products.length}',
+          );
+        }
+
+        if (success) {
+          // Stok alış maliyetini gider olarak ekle
+          final totalCost = quantity * purchasePrice;
+          await _addStockPurchaseExpense(product.name, totalCost);
+
+          // Form temizle
+          _nameController.clear();
+          _categoryController.clear();
+          _quantityController.clear();
+          _unitController.clear();
+          _purchasePriceController.clear();
+          _sellingPriceController.clear();
+
+          // Kategorileri güncelle
+          _loadCategories();
+
+          // Modal'ı kapat
+          Navigator.of(context).pop();
+
+          // Başarı mesajı göster
+          _showSuccessMessage(
+            'Ürün başarıyla eklendi ve alış maliyeti gider olarak kaydedildi',
+          );
+
+          // Provider'ı yeniden yükle (state refresh)
+          await stockProvider.loadProducts();
+
+          if (kDebugMode) {
+            Logger.debug(
+              'Products reloaded, count: ${stockProvider.products.length}',
+            );
+          }
+        } else {
+          // Hata mesajını provider'dan al
+          final errorMessage = stockProvider.errorMessage;
+          _showErrorMessage(
+            errorMessage ?? 'Ürün eklenirken bilinmeyen hata oluştu',
+          );
+        }
       } catch (e) {
         _showErrorMessage('Ürün eklenirken hata oluştu: $e');
+        if (kDebugMode) {
+          Logger.error('_addProduct error', e);
+        }
+      }
+    } else {
+      if (kDebugMode) {
+        Logger.debug('Form validation failed');
       }
     }
   }
@@ -260,7 +322,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
             Expanded(child: Text(message)),
           ],
         ),
-        backgroundColor: Colors.green,
+        backgroundColor: Theme.of(context).colorScheme.primary,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         margin: EdgeInsets.all(8),
@@ -278,7 +340,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
             Expanded(child: Text(message)),
           ],
         ),
-        backgroundColor: Colors.red,
+        backgroundColor: Theme.of(context).colorScheme.error,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         margin: EdgeInsets.all(8),
@@ -301,209 +363,266 @@ class _StockManagementPageState extends State<StockManagementPage> {
       final db = await DatabaseHelper().database;
       await db.insert('expenses', expense.toMap());
     } catch (e) {
-      print('Gider kaydedilirken hata oluştu: $e');
+      Logger.error('Gider kaydedilirken hata oluştu', e);
     }
   }
 
-  void _deleteProduct(Product product) {
-    showCupertinoDialog(
-      context: context,
-      builder:
-          (context) => CupertinoAlertDialog(
-            title: Text('Ürünü Sil'),
-            content: Text(
-              '${product.name} ürününü silmek istediğinize emin misiniz? Bu işlem geri alınamaz.',
-            ),
-            actions: [
-              CupertinoDialogAction(
-                child: Text('İptal'),
-                onPressed: () => Navigator.pop(context),
-              ),
-              CupertinoDialogAction(
-                child: Text('Sil'),
-                isDestructiveAction: true,
-                onPressed: () async {
-                  try {
-                    await Provider.of<StockProvider>(
-                      context,
-                      listen: false,
-                    ).deleteProduct(product.id!);
-                    Navigator.pop(context);
-                    _showSuccessMessage(
-                      '${product.name} ürünü başarıyla silindi',
-                    );
-                    // Kategorileri güncelle
-                    _loadCategories();
-                  } catch (e) {
-                    Navigator.pop(context);
-                    _showErrorMessage('Ürün silinirken hata oluştu: $e');
-                  }
-                },
-              ),
-            ],
-          ),
-    );
-  }
-
   void _showStockUpdateDialog(Product product) {
-    final _updateQuantityController = TextEditingController();
-    final _purchasePriceController = TextEditingController();
-    _purchasePriceController.text = product.purchasePrice.toString();
-    bool _isAddition = true;
+    final updateQuantityController = TextEditingController();
+    final purchasePriceController = TextEditingController();
+    final sellingPriceController = TextEditingController();
+    final nameController = TextEditingController();
+    final categoryController = TextEditingController();
+    final unitController = TextEditingController();
+
+    // Mevcut değerleri doldur
+    purchasePriceController.text = product.purchasePrice.toString();
+    sellingPriceController.text = product.sellingPrice.toString();
+    nameController.text = product.name;
+    categoryController.text = product.category;
+    unitController.text = product.unit;
+
+    bool isAddition = true;
+    bool isEditMode = false; // Düzenleme modu kontrolü
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder:
-              (context, setState) => Container(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              '${product.name} - Stok Güncelleme',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.close),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                          ],
-                        ),
-                        Divider(),
-                        SizedBox(height: 8),
-                        Container(
-                          padding: EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(12),
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+
+        return Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(28),
+              topRight: Radius.circular(28),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          isEditMode
+                              ? '${product.name} - Ürün Düzenle'
+                              : '${product.name} - Stok Güncelleme',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
                           ),
-                          child: Column(
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              isEditMode ? Icons.inventory : Icons.edit,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                isEditMode = !isEditMode;
+                              });
+                            },
+                            tooltip:
+                                isEditMode ? 'Stok Modu' : 'Düzenleme Modu',
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.close,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  Divider(color: colorScheme.outline.withAlpha(51)),
+                  SizedBox(height: 16),
+
+                  if (!isEditMode) ...[
+                    // Stok güncelleme modu
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withAlpha(
+                          77,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: colorScheme.outline.withAlpha(51),
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Mevcut Stok:',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${product.quantity} ${product.unit}',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
+                              Text(
+                                'Mevcut Stok:',
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
-                              SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Alış Fiyatı:',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${product.purchasePrice.toStringAsFixed(2)} ₺',
-                                    style: TextStyle(fontSize: 14),
-                                  ),
-                                ],
-                              ),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Satış Fiyatı:',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${product.sellingPrice.toStringAsFixed(2)} ₺',
-                                    style: TextStyle(fontSize: 14),
-                                  ),
-                                ],
+                              Text(
+                                '${product.quantity} ${product.unit}',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        SizedBox(height: 16),
-                        CupertinoSlidingSegmentedControl<bool>(
-                          groupValue: _isAddition,
-                          children: {
-                            true: Padding(
-                              padding: EdgeInsets.symmetric(
-                                vertical: 10,
-                                horizontal: 20,
+                          SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Alış Fiyatı:',
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
-                              child: Text(
-                                'Stok Ekle',
+                              Text(
+                                '${product.purchasePrice.toStringAsFixed(2)} ₺',
                                 style: TextStyle(fontSize: 14),
                               ),
-                            ),
-                            false: Padding(
-                              padding: EdgeInsets.symmetric(
-                                vertical: 10,
-                                horizontal: 20,
+                            ],
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Satış Fiyatı:',
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
-                              child: Text(
-                                'Stok Çıkar',
+                              Text(
+                                '${product.sellingPrice.toStringAsFixed(2)} ₺',
                                 style: TextStyle(fontSize: 14),
                               ),
-                            ),
-                          },
-                          onValueChanged: (value) {
-    setState(() {
-                              _isAddition = value!;
-                            });
-                          },
-                        ),
-                        SizedBox(height: 16),
-                        TextField(
-                          controller: _updateQuantityController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: 'Miktar',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            prefixIcon: Icon(Icons.trending_up),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    CupertinoSlidingSegmentedControl<bool>(
+                      groupValue: isAddition,
+                      children: {
+                        true: Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: 10,
+                            horizontal: 20,
+                          ),
+                          child: Text(
+                            'Stok Ekle',
+                            style: TextStyle(fontSize: 14),
                           ),
                         ),
-                        SizedBox(height: 8),
-                        if (_isAddition) ...[
-                          TextField(
-                            controller: _purchasePriceController,
+                        false: Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: 10,
+                            horizontal: 20,
+                          ),
+                          child: Text(
+                            'Stok Çıkar',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      },
+                      onValueChanged: (value) {
+                        setState(() {
+                          isAddition = value!;
+                        });
+                      },
+                    ),
+                    SizedBox(height: 16),
+                    TextField(
+                      controller: updateQuantityController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Miktar',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: Icon(Icons.trending_up),
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    if (isAddition) ...[
+                      TextField(
+                        controller: purchasePriceController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Alış Fiyatı (₺)',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: Icon(Icons.attach_money),
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                    ],
+                  ] else ...[
+                    // Ürün düzenleme modu
+                    Text(
+                      'Ürün Bilgilerini Düzenle',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    TextField(
+                      controller: nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Ürün Adı',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: Icon(Icons.shopping_bag),
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    TextField(
+                      controller: categoryController,
+                      decoration: InputDecoration(
+                        labelText: 'Kategori',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: Icon(Icons.category),
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    TextField(
+                      controller: unitController,
+                      decoration: InputDecoration(
+                        labelText: 'Birim',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: Icon(Icons.straighten),
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: purchasePriceController,
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
                               labelText: 'Alış Fiyatı (₺)',
@@ -513,99 +632,127 @@ class _StockManagementPageState extends State<StockManagementPage> {
                               prefixIcon: Icon(Icons.attach_money),
                             ),
                           ),
-                          SizedBox(height: 8),
-                        ],
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: () async {
-                                  try {
-                                    final amount = double.parse(
-                                      _updateQuantityController.text,
-                                    );
-                                    final updateAmount =
-                                        _isAddition ? amount : -amount;
-
-                                    await Provider.of<StockProvider>(
-                                      context,
-                                      listen: false,
-                                    ).updateStock(product.id!, updateAmount);
-
-                                    // Eğer stok ekleme yapıldıysa, bunu bir gider olarak kaydet
-                                    if (_isAddition) {
-                                      final purchasePrice = double.parse(
-                                        _purchasePriceController.text,
-                                      );
-                                      final totalCost = amount * purchasePrice;
-                                      await _addStockPurchaseExpense(
-                                        product.name,
-                                        totalCost,
-                                      );
-                                    }
-
-                                    Navigator.of(context).pop();
-
-                                    _showSuccessMessage(
-                                      _isAddition
-                                          ? 'Stok eklendi ve alış gideri kaydedildi'
-                                          : 'Stok çıkarıldı',
-                                    );
-                                  } catch (e) {
-                                    _showErrorMessage('Hata: $e');
-                                  }
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                  padding: EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: Text(
-                                  'Güncelle',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
                         ),
-                        SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _deleteProduct(product);
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.red,
-                                  side: BorderSide(color: Colors.red),
-                                  padding: EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: Text(
-                                  'Ürünü Sil',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: sellingPriceController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Satış Fiyatı (₺)',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
+                              prefixIcon: Icon(Icons.monetization_on),
                             ),
-                          ],
+                          ),
                         ),
                       ],
                     ),
+                    SizedBox(height: 16),
+                  ],
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            try {
+                              if (isEditMode) {
+                                // Ürün bilgilerini güncelle
+                                final updatedProduct = Product(
+                                  id: product.id,
+                                  name: nameController.text.trim(),
+                                  category: categoryController.text.trim(),
+                                  quantity: product.quantity,
+                                  unit: unitController.text.trim(),
+                                  purchasePrice: double.parse(
+                                    purchasePriceController.text,
+                                  ),
+                                  sellingPrice: double.parse(
+                                    sellingPriceController.text,
+                                  ),
+                                );
+
+                                await Provider.of<StockProvider>(
+                                  context,
+                                  listen: false,
+                                ).updateProduct(updatedProduct);
+
+                                Navigator.pop(context);
+                                _showSuccessMessage(
+                                  'Ürün bilgileri başarıyla güncellendi',
+                                );
+                                _loadCategories(); // Kategorileri yenile
+                              } else {
+                                // Stok güncelle
+                                final amount = double.parse(
+                                  updateQuantityController.text,
+                                );
+                                final updateAmount =
+                                    isAddition ? amount : -amount;
+
+                                await Provider.of<StockProvider>(
+                                  context,
+                                  listen: false,
+                                ).updateStock(
+                                  productId: product.id!,
+                                  newQuantity: updateAmount,
+                                );
+
+                                // Eğer stok ekleme yapıldıysa, bunu bir gider olarak kaydet
+                                if (isAddition) {
+                                  final purchasePrice = double.parse(
+                                    purchasePriceController.text,
+                                  );
+                                  final totalCost = amount * purchasePrice;
+                                  await _addStockPurchaseExpense(
+                                    product.name,
+                                    totalCost,
+                                  );
+                                }
+
+                                Navigator.pop(context);
+                                _showSuccessMessage(
+                                  isAddition
+                                      ? 'Stok başarıyla eklendi'
+                                      : 'Stok başarıyla çıkarıldı',
+                                );
+                              }
+                            } catch (e) {
+                              _showErrorMessage('Hata: $e');
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                isEditMode
+                                    ? Colors.blue
+                                    : (isAddition
+                                        ? Colors.green
+                                        : Colors.orange),
+                            padding: EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            isEditMode
+                                ? 'Bilgileri Güncelle'
+                                : (isAddition ? 'Stok Ekle' : 'Stok Çıkar'),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
+            ),
+          ),
         );
       },
     );
@@ -630,6 +777,8 @@ class _StockManagementPageState extends State<StockManagementPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final products = Provider.of<StockProvider>(context).products;
 
     // Ürünleri filtrele
@@ -655,14 +804,20 @@ class _StockManagementPageState extends State<StockManagementPage> {
         }).toList();
 
     return Scaffold(
-      backgroundColor: Color(0xFFD2B48C), // Tan rengi
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: Text('Stok Yönetimi'),
-        backgroundColor: Color(0xFF8B0000), // Muted Tomato Red
-        foregroundColor: Colors.white,
+        title: Text(
+          'Stok Yönetimi',
+          style: theme.textTheme.titleLarge?.copyWith(
+            color: colorScheme.onPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(CupertinoIcons.back),
+          icon: Icon(CupertinoIcons.back, color: colorScheme.onPrimary),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -673,48 +828,81 @@ class _StockManagementPageState extends State<StockManagementPage> {
           Container(
             padding: const EdgeInsets.symmetric(
               horizontal: 16.0,
-              vertical: 8.0,
+              vertical: 12.0,
             ),
-            color: Colors.white,
+            color: colorScheme.surface,
             child: Column(
               children: [
-                CupertinoSearchTextField(
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                    });
-                  },
-                  placeholder: 'Ürün ara...',
-                  padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+                Container(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withAlpha(77),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: colorScheme.outline.withAlpha(51),
+                    ),
+                  ),
+                  child: TextField(
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value;
+                      });
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'Ürün ara...',
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 16,
+                      ),
+                      hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                    ),
+                    style: TextStyle(color: colorScheme.onSurface),
+                  ),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 12),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
                       Text(
                         'Kategori: ',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.grey.shade700,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                       SizedBox(width: 8),
                       ...List.generate(_categories.length, (index) {
                         final category = _categories[index];
+                        final isSelected = _selectedCategory == category;
                         return Padding(
                           padding: const EdgeInsets.only(right: 8.0),
-                          child: ChoiceChip(
+                          child: FilterChip(
                             label: Text(category),
-                            selected: _selectedCategory == category,
-                            selectedColor: Colors.blue.shade100,
+                            selected: isSelected,
+                            selectedColor: colorScheme.primaryContainer,
+                            backgroundColor: colorScheme.surfaceContainerHighest
+                                .withAlpha(77),
                             labelStyle: TextStyle(
                               color:
-                                  _selectedCategory == category
-                                      ? Colors.blue.shade800
-                                      : Colors.black,
+                                  isSelected
+                                      ? colorScheme.onPrimaryContainer
+                                      : colorScheme.onSurfaceVariant,
                               fontSize: 13,
+                              fontWeight:
+                                  isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                            ),
+                            side: BorderSide(
+                              color:
+                                  isSelected
+                                      ? colorScheme.primary
+                                      : colorScheme.outline.withAlpha(77),
                             ),
                             onSelected: (selected) {
                               setState(() {
@@ -745,20 +933,24 @@ class _StockManagementPageState extends State<StockManagementPage> {
                         Icon(
                           CupertinoIcons.cube_box,
                           size: 64,
-                          color: Colors.grey,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                         SizedBox(height: 16),
                         Text(
                           'Henüz ürün eklenmemiş',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey[700],
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                         SizedBox(height: 16),
-                        CupertinoButton.filled(
+                        ElevatedButton.icon(
                           onPressed: _showAddProductDialog,
-                          child: Text('Ürün Ekle'),
+                          icon: Icon(Icons.add),
+                          label: Text('Ürün Ekle'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: colorScheme.primary,
+                            foregroundColor: colorScheme.onPrimary,
+                          ),
                         ),
                       ],
                     ),
@@ -773,19 +965,28 @@ class _StockManagementPageState extends State<StockManagementPage> {
                         Icon(
                           CupertinoIcons.search,
                           size: 64,
-                          color: Colors.grey,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                         SizedBox(height: 16),
-                        Text('Arama kriterine uygun ürün bulunamadı.'),
+                        Text(
+                          'Arama kriterine uygun ürün bulunamadı.',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                         SizedBox(height: 16),
-                        CupertinoButton(
+                        TextButton.icon(
                           onPressed: () {
                             setState(() {
                               _searchQuery = '';
                               _selectedCategory = 'Tümü';
                             });
                           },
-                          child: Text('Filtreleri Temizle'),
+                          icon: Icon(Icons.clear_all),
+                          label: Text('Filtreleri Temizle'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: colorScheme.primary,
+                          ),
                         ),
                       ],
                     ),
@@ -795,7 +996,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
                 return ListView.builder(
                   itemCount: filteredProducts.length,
                   padding: EdgeInsets.all(8),
-              itemBuilder: (context, index) {
+                  itemBuilder: (context, index) {
                     final product = filteredProducts[index];
                     final isLowStock =
                         product.quantity < 5; // Örnek düşük stok kontrolü
@@ -832,10 +1033,10 @@ class _StockManagementPageState extends State<StockManagementPage> {
                                         () => Navigator.pop(context, false),
                                   ),
                                   CupertinoDialogAction(
-                                    child: Text('Sil'),
                                     isDestructiveAction: true,
                                     onPressed:
                                         () => Navigator.pop(context, true),
+                                    child: Text('Sil'),
                                   ),
                                 ],
                               ),
@@ -857,44 +1058,53 @@ class _StockManagementPageState extends State<StockManagementPage> {
                         }
                       },
                       child: Card(
-                        elevation: 0,
+                        elevation: 1,
+                        color: colorScheme.surface,
+                        surfaceTintColor: colorScheme.surfaceTint,
                         margin: EdgeInsets.symmetric(vertical: 4),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(16),
                           side: BorderSide(
                             color:
                                 isLowStock
-                                    ? Colors.red.shade300
-                                    : Colors.grey.shade200,
-                            width: isLowStock ? 1 : 0.5,
+                                    ? colorScheme.error.withAlpha(128)
+                                    : colorScheme.outline.withAlpha(51),
+                            width: isLowStock ? 1.5 : 0.5,
                           ),
                         ),
                         child: InkWell(
                           onTap: () => _showStockUpdateDialog(product),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(16),
                           child: Padding(
-                            padding: const EdgeInsets.all(12.0),
+                            padding: const EdgeInsets.all(16.0),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                CircleAvatar(
-                                  backgroundColor: _getCategoryColor(
-                                    product.category,
-                                  ).withOpacity(0.2),
-                                  foregroundColor: _getCategoryColor(
-                                    product.category,
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: _getCategoryColor(
+                                      product.category,
+                                    ).withAlpha(25),
+                                    shape: BoxShape.circle,
                                   ),
-                                  child: Text(
-                                    product.name.substring(0, 1).toUpperCase(),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: _getCategoryColor(
-                                        product.category,
-                                      ),
+                                  child: Center(
+                                    child: Text(
+                                      product.name
+                                          .substring(0, 1)
+                                          .toUpperCase(),
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: _getCategoryColor(
+                                              product.category,
+                                            ),
+                                          ),
                                     ),
                                   ),
                                 ),
-                                SizedBox(width: 12),
+                                SizedBox(width: 16),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -902,42 +1112,69 @@ class _StockManagementPageState extends State<StockManagementPage> {
                                     children: [
                                       Text(
                                         product.name,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        product.category,
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                          fontSize: 13,
-                                        ),
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                              color: colorScheme.onSurface,
+                                            ),
                                       ),
                                       SizedBox(height: 4),
+                                      Text(
+                                        product.category,
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              color:
+                                                  colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                      SizedBox(height: 8),
                                       Row(
                                         children: [
-                                          Icon(
-                                            CupertinoIcons.cube_box,
-                                            size: 14,
-                                            color: Colors.blue,
+                                          Container(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: colorScheme
+                                                  .primaryContainer
+                                                  .withAlpha(77),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  CupertinoIcons.cube_box,
+                                                  size: 12,
+                                                  color: colorScheme.primary,
+                                                ),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  '${product.quantity} ${product.unit}',
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color:
+                                                            colorScheme
+                                                                .onPrimaryContainer,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                          SizedBox(width: 4),
-                                          Text(
-                                            '${product.quantity} ${product.unit}',
-                                            style: TextStyle(fontSize: 13),
-                                          ),
-                                          SizedBox(width: 12),
-                                          Icon(
-                                            CupertinoIcons.money_dollar,
-                                            size: 14,
-                                            color: Colors.green,
-                                          ),
-                                          SizedBox(width: 4),
+                                          SizedBox(width: 8),
                                           Text(
                                             '${product.sellingPrice.toStringAsFixed(2)} ₺',
-                                            style: TextStyle(fontSize: 13),
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color: colorScheme.primary,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                           ),
                                         ],
                                       ),
@@ -951,7 +1188,7 @@ class _StockManagementPageState extends State<StockManagementPage> {
                                       vertical: 4,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
+                                      color: colorScheme.errorContainer,
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
@@ -960,25 +1197,27 @@ class _StockManagementPageState extends State<StockManagementPage> {
                                         Icon(
                                           CupertinoIcons
                                               .exclamationmark_triangle,
-                                          size: 14,
-                                          color: Colors.red,
+                                          size: 12,
+                                          color: colorScheme.onErrorContainer,
                                         ),
                                         SizedBox(width: 4),
                                         Text(
                                           'Az Stok',
-                                          style: TextStyle(
-                                            color: Colors.red,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                          ),
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color:
+                                                    colorScheme
+                                                        .onErrorContainer,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                SizedBox(width: 4),
+                                SizedBox(width: 8),
                                 Icon(
                                   CupertinoIcons.chevron_right,
-                                  color: Colors.grey,
+                                  color: colorScheme.onSurfaceVariant,
                                   size: 16,
                                 ),
                               ],
@@ -994,43 +1233,15 @@ class _StockManagementPageState extends State<StockManagementPage> {
           ),
         ],
       ),
-      floatingActionButton: Container(
-        width: 160,
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.blue,
-          borderRadius: BorderRadius.circular(25),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 8,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: _showAddProductDialog,
-            borderRadius: BorderRadius.circular(25),
-            child: Center(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(CupertinoIcons.add, color: Colors.white),
-                  SizedBox(width: 8),
-                  Text(
-                    'Ürün Ekle',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddProductDialog,
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        elevation: 3,
+        icon: Icon(CupertinoIcons.add),
+        label: Text(
+          'Ürün Ekle',
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
         ),
       ),
     );

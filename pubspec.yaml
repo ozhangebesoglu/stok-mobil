@@ -1,5 +1,5 @@
-name: kasap_stok_takip
-description: "A new Flutter project."
+name: stok_takibim
+description: "Stok Takibim - Kişisel stok yönetim uygulaması"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -33,12 +33,14 @@ dependencies:
   sqflite: ^2.2.6      # SQLite veritabanı
   sqflite_common_ffi: ^2.2.5  # Windows desteği için
   path_provider: ^2.0.13
+  path: ^1.8.3         # Path utilities
   provider: ^6.0.5     # State yönetimi
-  fl_chart: ^0.70.2    # Grafikler için
-  intl: ^0.18.0        # Tarih, para birimi formatlaması
+  fl_chart: ^1.0.0    # Grafikler için
+  intl: ^0.20.2        # Tarih, para birimi formatlaması
   shared_preferences: ^2.0.18
   pdf: ^3.9.0          # Fatura oluşturma
   printing: ^5.10.1    # Yazdırma işlemi
+  flutter_screenutil: ^5.9.3  # Responsive tasarım için
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -53,7 +55,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

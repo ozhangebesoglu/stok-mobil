@@ -13,7 +13,7 @@ class CustomTextField extends StatelessWidget {
   final String? hintText;
 
   const CustomTextField({
-    Key? key,
+    super.key,
     required this.labelText,
     this.prefixIcon,
     this.keyboardType = TextInputType.text,
@@ -23,7 +23,7 @@ class CustomTextField extends StatelessWidget {
     this.validator,
     this.inputFormatters,
     this.hintText,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

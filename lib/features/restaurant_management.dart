@@ -1,35 +1,51 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:provider/provider.dart';
+
+import '../services/database/database_helper.dart';
 import '../models/sale.dart';
 import '../providers/sales_provider.dart';
-import '../services/database/database_helper.dart';
 import '../main.dart';
+import '../core/utils/date_formatter.dart';
+import '../core/utils/logger.dart';
 
 class RestaurantManagement extends StatefulWidget {
+  const RestaurantManagement({super.key});
+
   @override
-  _RestaurantManagementState createState() => _RestaurantManagementState();
+  State<RestaurantManagement> createState() => _RestaurantManagementState();
 }
 
-class _RestaurantManagementState extends State<RestaurantManagement> {
+class _RestaurantManagementState extends State<RestaurantManagement>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  // Form controllers
   final _restaurantController = TextEditingController();
   final _productController = TextEditingController();
   final _quantityController = TextEditingController();
   final _unitPriceController = TextEditingController();
   final _notesController = TextEditingController();
   final _totalAmountController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  // State variables
   String _selectedUnit = 'kg';
   List<Map<String, dynamic>> _restaurantSales = [];
   bool _isLoading = false;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadRestaurantSales();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _restaurantController.dispose();
     _productController.dispose();
     _quantityController.dispose();
@@ -56,7 +72,7 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Restoran satışları yüklenirken hata: $e');
+      Logger.error('Restoran satışları yüklenirken hata', e);
       setState(() {
         _isLoading = false;
       });
@@ -82,74 +98,87 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
 
   // Restoran satışı ekle
   Future<void> _addRestaurantSale() async {
-    if (_restaurantController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Lütfen restoran adı girin'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    // Form validation
+    if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    if (_totalAmountController.text.isEmpty ||
-        double.parse(_totalAmountController.text) <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Lütfen geçerli bir tutar girin'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    // Additional validation
+    if (_restaurantController.text.trim().isEmpty) {
+      _showErrorSnackBar('Lütfen restoran adı girin');
       return;
     }
+
+    if (_totalAmountController.text.trim().isEmpty) {
+      _showErrorSnackBar('Lütfen toplam tutar girin');
+      return;
+    }
+
+    double? totalAmount;
+    try {
+      totalAmount = double.parse(_totalAmountController.text.trim());
+      if (totalAmount <= 0) {
+        _showErrorSnackBar('Tutar sıfırdan büyük olmalıdır');
+        return;
+      }
+    } catch (e) {
+      _showErrorSnackBar('Geçerli bir tutar girin');
+      return;
+    }
+
+    // Set loading state
+    setState(() {
+      _isSubmitting = true;
+    });
 
     try {
-      // Tarih formatı
-      final dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
-      final now = DateTime.now();
-      final formattedDate = dateFormat.format(now);
+      // Tarih formatı - DateFormatter kullanarak
+      final formattedDate = DateFormatter.formatForDatabase(DateTime.now());
 
       // Veritabanına ekleme
       final db = await DatabaseHelper().database;
       final sale = {
-        'restaurant': _restaurantController.text,
-        'amount': double.parse(_totalAmountController.text),
+        'restaurant': _restaurantController.text.trim(),
+        'amount': totalAmount,
         'date': formattedDate,
-        'productName': _productController.text,
+        'productName':
+            _productController.text.trim().isEmpty
+                ? 'Ürün belirtilmedi'
+                : _productController.text.trim(),
         'quantity':
-            _quantityController.text.isNotEmpty
-                ? double.parse(_quantityController.text)
+            _quantityController.text.trim().isNotEmpty
+                ? double.parse(_quantityController.text.trim())
                 : null,
         'unit': _selectedUnit,
         'unitPrice':
-            _unitPriceController.text.isNotEmpty
-                ? double.parse(_unitPriceController.text)
+            _unitPriceController.text.trim().isNotEmpty
+                ? double.parse(_unitPriceController.text.trim())
                 : null,
-        'notes': _notesController.text,
+        'notes': _notesController.text.trim(),
       };
 
       await db.insert('restaurant_sales', sale);
 
       // SalesProvider'a da ekleyelim (istatistik için)
       final saleModel = Sale(
-        customerName: 'Restoran: ${_restaurantController.text}',
-        amount: double.parse(_totalAmountController.text),
+        customerName: 'Restoran: ${_restaurantController.text.trim()}',
+        amount: totalAmount,
         date: formattedDate,
         isPaid: true,
         productName:
-            _productController.text.isEmpty
+            _productController.text.trim().isEmpty
                 ? 'Ürün belirtilmedi'
-                : _productController.text,
+                : _productController.text.trim(),
         quantity:
-            _quantityController.text.isEmpty
+            _quantityController.text.trim().isEmpty
                 ? 1
-                : double.parse(_quantityController.text),
+                : double.parse(_quantityController.text.trim()),
         unit: _selectedUnit,
         unitPrice:
-            _unitPriceController.text.isEmpty
+            _unitPriceController.text.trim().isEmpty
                 ? 0
-                : double.parse(_unitPriceController.text),
-        notes: _notesController.text,
+                : double.parse(_unitPriceController.text.trim()),
+        notes: _notesController.text.trim(),
       );
 
       await Provider.of<SalesProvider>(
@@ -157,66 +186,71 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
         listen: false,
       ).addSale(saleModel);
 
-      // Ana sayfadaki istatistikleri güncelle
-      HomePage.updateStatistics(context);
+      // Clear form
+      _clearForm();
 
-      // Form temizle
-      _restaurantController.clear();
-      _productController.clear();
-      _quantityController.clear();
-      _unitPriceController.clear();
-      _notesController.clear();
-      _totalAmountController.clear();
+      // Reload data
+      await _loadRestaurantSales();
 
-      // Listeyi yenile
-      _loadRestaurantSales();
+      // Switch to records tab to see the new entry
+      _tabController.animateTo(1);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Restoran satışı eklendi'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      // Success feedback
+      _showSuccessSnackBar('Restoran satışı başarıyla eklendi');
     } catch (e) {
-      print('Satış eklenirken hata: $e');
-
-      try {
-        // isPaid olmadan tekrar deneyelim
-        final db = await DatabaseHelper().database;
-        final sale = {
-          'restaurant': _restaurantController.text,
-          'amount': double.parse(_totalAmountController.text),
-          'date': DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
-          'productName': _productController.text,
-          'quantity':
-              _quantityController.text.isNotEmpty
-                  ? double.parse(_quantityController.text)
-                  : null,
-          'unit': _selectedUnit,
-          'unitPrice':
-              _unitPriceController.text.isNotEmpty
-                  ? double.parse(_unitPriceController.text)
-                  : null,
-          'notes': _notesController.text,
-        };
-
-        await db.insert('restaurant_sales', sale);
-
-        // Listeyi yenile
-        _loadRestaurantSales();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Restoran satışı eklendi (alternatif metod)'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } catch (e2) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Hata: $e2'), backgroundColor: Colors.red),
-        );
+      Logger.error('Satış eklenirken hata', e);
+      _showErrorSnackBar('Satış eklenirken bir hata oluştu: ${e.toString()}');
+    } finally {
+      // Reset loading state
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
       }
     }
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              CupertinoIcons.exclamationmark_triangle_fill,
+              color: Colors.white,
+            ),
+            SizedBox(width: 8.w),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16.w),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.r),
+        ),
+      ),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(CupertinoIcons.checkmark_circle_fill, color: Colors.white),
+            SizedBox(width: 8.w),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16.w),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.r),
+        ),
+      ),
+    );
   }
 
   // Restoran satışı sil
@@ -228,11 +262,20 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
       // Listeyi yenile
       _loadRestaurantSales();
 
-      // Ana sayfadaki istatistikleri güncelle
-      HomePage.updateStatistics(context);
-
+      // Success feedback - stay on same page instead of going home
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Satış silindi'), backgroundColor: Colors.green),
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Satış başarıyla silindi'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -243,9 +286,9 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
 
   // Restoran ödeme alma dialogu
   void _showPaymentDialog(String restaurantName) {
-    final _paymentController = TextEditingController();
-    final _paymentNotesController = TextEditingController();
-    bool _isDebt = false;
+    final paymentController = TextEditingController();
+    final paymentNotesController = TextEditingController();
+    bool isDebt = false;
 
     showDialog(
       context: context,
@@ -258,7 +301,7 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       TextField(
-                        controller: _paymentController,
+                        controller: paymentController,
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
                           labelText: 'Tutar',
@@ -268,7 +311,7 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                       ),
                       SizedBox(height: 10),
                       TextField(
-                        controller: _paymentNotesController,
+                        controller: paymentNotesController,
                         decoration: InputDecoration(
                           labelText: 'Açıklama (Opsiyonel)',
                           border: OutlineInputBorder(),
@@ -282,10 +325,10 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                             child: RadioListTile<bool>(
                               title: Text('Ödeme Al'),
                               value: false,
-                              groupValue: _isDebt,
+                              groupValue: isDebt,
                               onChanged: (value) {
                                 setState(() {
-                                  _isDebt = value!;
+                                  isDebt = value!;
                                 });
                               },
                             ),
@@ -294,10 +337,10 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                             child: RadioListTile<bool>(
                               title: Text('Borç Ekle'),
                               value: true,
-                              groupValue: _isDebt,
+                              groupValue: isDebt,
                               onChanged: (value) {
                                 setState(() {
-                                  _isDebt = value!;
+                                  isDebt = value!;
                                 });
                               },
                             ),
@@ -314,7 +357,7 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                     ElevatedButton(
                       onPressed: () async {
                         try {
-                          if (_paymentController.text.isEmpty) {
+                          if (paymentController.text.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('Lütfen tutar giriniz'),
@@ -324,7 +367,7 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                             return;
                           }
 
-                          final amount = double.parse(_paymentController.text);
+                          final amount = double.parse(paymentController.text);
                           if (amount <= 0) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -336,13 +379,13 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                           }
 
                           // Tarih formatı
-                          final dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
-                          final now = DateTime.now();
-                          final formattedDate = dateFormat.format(now);
+                          final formattedDate = DateFormatter.formatForDatabase(
+                            DateTime.now(),
+                          );
                           final notes =
-                              _paymentNotesController.text.isNotEmpty
-                                  ? _paymentNotesController.text
-                                  : (_isDebt ? 'Borç eklendi' : 'Ödeme alındı');
+                              paymentNotesController.text.isNotEmpty
+                                  ? paymentNotesController.text
+                                  : (isDebt ? 'Borç eklendi' : 'Ödeme alındı');
 
                           // Veritabanı işlemleri
                           final db = await DatabaseHelper().database;
@@ -354,7 +397,7 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                               'amount': amount,
                               'date': formattedDate,
                               'productName':
-                                  _isDebt ? 'Borç Kaydı' : 'Ödeme Alındı',
+                                  isDebt ? 'Borç Kaydı' : 'Ödeme Alındı',
                               'notes': notes,
                             };
 
@@ -365,9 +408,9 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                               customerName: 'Restoran: $restaurantName',
                               amount: amount,
                               date: formattedDate,
-                              isPaid: !_isDebt,
+                              isPaid: !isDebt,
                               productName:
-                                  _isDebt ? 'Borç Kaydı' : 'Ödeme Alındı',
+                                  isDebt ? 'Borç Kaydı' : 'Ödeme Alındı',
                               quantity: 1,
                               unit: 'adet',
                               unitPrice: amount,
@@ -390,14 +433,14 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  _isDebt ? 'Borç eklendi' : 'Ödeme alındı',
+                                  isDebt ? 'Borç eklendi' : 'Ödeme alındı',
                                 ),
                                 backgroundColor:
-                                    _isDebt ? Colors.orange : Colors.green,
+                                    isDebt ? Colors.orange : Colors.green,
                               ),
                             );
                           } catch (e) {
-                            print('İlk deneme başarısız: $e');
+                            Logger.error('İlk deneme başarısız', e);
 
                             // Alternatif yöntem - isPaid olmadan
                             final sale = {
@@ -405,7 +448,7 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                               'amount': amount,
                               'date': formattedDate,
                               'productName':
-                                  _isDebt ? 'Borç Kaydı' : 'Ödeme Alındı',
+                                  isDebt ? 'Borç Kaydı' : 'Ödeme Alındı',
                               'notes': notes,
                             };
 
@@ -422,10 +465,10 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  _isDebt ? 'Borç eklendi' : 'Ödeme alındı',
+                                  isDebt ? 'Borç eklendi' : 'Ödeme alındı',
                                 ),
                                 backgroundColor:
-                                    _isDebt ? Colors.orange : Colors.green,
+                                    isDebt ? Colors.orange : Colors.green,
                               ),
                             );
                           }
@@ -438,10 +481,10 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
                           );
                         }
                       },
-                      child: Text('Kaydet'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                       ),
+                      child: Text('Kaydet'),
                     ),
                   ],
                 ),
@@ -449,343 +492,790 @@ class _RestaurantManagementState extends State<RestaurantManagement> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Restoran Satışları'),
-        backgroundColor: Colors.brown,
+  void _showRestaurantSaleOptions(Map<String, dynamic> sale) {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      body: Column(
-        children: [
-          // Form alanı
-          Container(
+      builder:
+          (context) => Container(
             padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.brown.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            margin: EdgeInsets.all(16),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Yeni Restoran Satışı',
+                  'Satış İşlemleri',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: 16),
-                // Restoran adı
-                TextField(
-                  controller: _restaurantController,
-                  decoration: InputDecoration(
-                    labelText: 'Restoran İsmi*',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.restaurant),
+
+                // Sale details
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Restoran: ${sale['restaurant']}'),
+                      Text('Ürün: ${sale['productName'] ?? 'Belirtilmedi'}'),
+                      Text('Tutar: ${sale['amount']} ₺'),
+                      Text(
+                        'Tarih: ${DateFormatter.formatDisplayDate(sale['date'])}',
+                      ),
+                    ],
                   ),
                 ),
+
                 SizedBox(height: 16),
-                // Ürün adı ve miktar
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _productController,
-                        decoration: InputDecoration(
-                          labelText: 'Ürün Adı',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.shopping_bag),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: TextField(
-                        controller: _quantityController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: 'Miktar',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.scale),
-                        ),
-                        onChanged: (value) => _calculateTotalAmount(),
-                      ),
-                    ),
-                  ],
+
+                // Action buttons
+                ListTile(
+                  leading: Icon(Icons.payment, color: Colors.green),
+                  title: Text('Ödeme/Borç Ekle'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showPaymentDialog(sale['restaurant']);
+                  },
                 ),
-                SizedBox(height: 16),
-                // Birim ve birim fiyat
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        decoration: InputDecoration(
-                          labelText: 'Birim',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.straighten),
-                        ),
-                        value: _selectedUnit,
-                        items:
-                            ['kg', 'gr', 'adet', 'litre'].map((unit) {
-                              return DropdownMenuItem(
-                                value: unit,
-                                child: Text(unit),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedUnit = value!;
-                          });
-                        },
-                      ),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: TextField(
-                        controller: _unitPriceController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: 'Birim Fiyat',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.attach_money),
-                        ),
-                        onChanged: (value) => _calculateTotalAmount(),
-                      ),
-                    ),
-                  ],
+
+                ListTile(
+                  leading: Icon(Icons.delete, color: Colors.red),
+                  title: Text('Satışı Sil'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showDeleteConfirmation(sale);
+                  },
                 ),
-                SizedBox(height: 16),
-                // Toplam tutar
-                TextField(
-                  controller: _totalAmountController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Toplam Tutar (₺)*',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.money),
-                  ),
-                ),
-                SizedBox(height: 16),
-                // Notlar
-                TextField(
-                  controller: _notesController,
-                  decoration: InputDecoration(
-                    labelText: 'Notlar',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.note),
-                  ),
-                  maxLines: 2,
-                ),
-                SizedBox(height: 16),
-                // Butonlar
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          // Form temizle
-                          _restaurantController.clear();
-                          _productController.clear();
-                          _quantityController.clear();
-                          _unitPriceController.clear();
-                          _notesController.clear();
-                          _totalAmountController.clear();
-                        },
-                        icon: Icon(Icons.clear),
-                        label: Text('Temizle'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey,
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _addRestaurantSale,
-                        icon: Icon(Icons.add),
-                        label: Text('Satış Ekle'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+
+                SizedBox(height: 8),
               ],
             ),
           ),
-          // Satışlar listesi başlığı
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Restoran Satışları',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                if (_isLoading)
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
+    );
+  }
+
+  void _showDeleteConfirmation(Map<String, dynamic> sale) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Satışı Sil'),
+            content: Text(
+              'Bu satış kaydını silmek istediğinize emin misiniz?\n\n'
+              'Restoran: ${sale['restaurant']}\n'
+              'Tutar: ${sale['amount']} ₺\n\n'
+              'Bu işlem geri alınamaz.',
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('İptal'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _deleteRestaurantSale(sale['id']);
+                },
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: Text('Sil'),
+              ),
+            ],
           ),
-          // Satışlar listesi
-          Expanded(
-            child:
-                _isLoading
-                    ? Center(child: CircularProgressIndicator())
-                    : _restaurantSales.isEmpty
-                    ? Center(child: Text('Henüz satış kaydı bulunmuyor'))
-                    : ListView.builder(
-                      itemCount: _restaurantSales.length,
-                      padding: EdgeInsets.all(16),
-                      itemBuilder: (context, index) {
-                        final sale = _restaurantSales[index];
-                        final date = DateFormat('dd.MM.yyyy HH:mm').format(
-                          DateFormat('yyyy-MM-dd HH:mm:ss').parse(sale['date']),
-                        );
+    );
+  }
 
-                        final isPayment = sale['productName'] == 'Ödeme Alındı';
-                        final isDebt = sale['productName'] == 'Borç Kaydı';
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
-                        return Card(
-                          margin: EdgeInsets.only(bottom: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      appBar: AppBar(
+        title: Text(
+          'Restoran Satışları',
+          style: theme.textTheme.titleLarge?.copyWith(
+            color: colorScheme.onPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        elevation: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: colorScheme.onPrimary,
+          labelColor: colorScheme.onPrimary,
+          unselectedLabelColor: colorScheme.onPrimary.withAlpha(179),
+          tabs: [
+            Tab(icon: Icon(CupertinoIcons.add_circled), text: 'Yeni Satış'),
+            Tab(
+              icon: Icon(CupertinoIcons.list_bullet),
+              text: 'Satış Kayıtları',
+            ),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildNewSaleTab(colorScheme, theme),
+          _buildSalesRecordsTab(colorScheme, theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewSaleTab(ColorScheme colorScheme, ThemeData theme) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(16.w),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Modern header card
+            Container(
+              padding: EdgeInsets.all(20.w),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    colorScheme.primaryContainer.withAlpha(179),
+                    colorScheme.primaryContainer.withAlpha(179),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16.r),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.shadow.withAlpha(25),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(12.w),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary,
+                      borderRadius: BorderRadius.circular(12.r),
+                    ),
+                    child: Icon(
+                      CupertinoIcons.add_circled,
+                      color: colorScheme.onPrimary,
+                      size: 24.w,
+                    ),
+                  ),
+                  SizedBox(width: 16.w),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Yeni Restoran Satışı',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            color: colorScheme.onPrimaryContainer.withAlpha(
+                              179,
+                            ),
+                            fontWeight: FontWeight.bold,
                           ),
-                          elevation: 4,
-                          child: InkWell(
-                            onTap: () {
-                              // İşlem seçenekleri
-                              showModalBottomSheet(
-                                context: context,
-                                builder:
-                                    (context) => Container(
-                                      padding: EdgeInsets.all(16),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          ListTile(
-                                            leading: Icon(Icons.payment),
-                                            title: Text('Ödeme/Borç Ekle'),
-                                            onTap: () {
-                                              Navigator.of(context).pop();
-                                              _showPaymentDialog(
-                                                sale['restaurant'],
-                                              );
-                                            },
-                                          ),
-                                          ListTile(
-                                            leading: Icon(Icons.delete),
-                                            title: Text('Kaydı Sil'),
-                                            onTap: () {
-                                              Navigator.of(context).pop();
-                                              _deleteRestaurantSale(sale['id']);
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                              );
-                            },
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          CircleAvatar(
-                                            backgroundColor:
-                                                isPayment
-                                                    ? Colors.green
-                                                    : isDebt
-                                                    ? Colors.orange
-                                                    : Colors.brown,
-                                            child: Icon(
-                                              isPayment
-                                                  ? Icons.payment
-                                                  : isDebt
-                                                  ? Icons.money_off
-                                                  : Icons.restaurant,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                          SizedBox(width: 12),
-                                          Text(
-                                            sale['restaurant'],
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Text(
-                                        '${sale['amount'].toStringAsFixed(2)} ₺',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                          color:
-                                              isDebt
-                                                  ? Colors.red
-                                                  : Colors.green,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(date),
-                                  if (!isPayment &&
-                                      !isDebt &&
-                                      sale['productName'] != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8.0),
-                                      child: Text(
-                                        'Ürün: ${sale['productName']}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  if (!isPayment &&
-                                      !isDebt &&
-                                      sale['quantity'] != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4.0),
-                                      child: Text(
-                                        'Miktar: ${sale['quantity']} ${sale['unit'] ?? ''}',
-                                      ),
-                                    ),
-                                  if (sale['notes'] != null &&
-                                      sale['notes'].toString().isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8.0),
-                                      child: Text(
-                                        'Not: ${sale['notes']}',
-                                        style: TextStyle(
-                                          fontStyle: FontStyle.italic,
-                                          color: Colors.grey.shade700,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
+                        ),
+                        SizedBox(height: 4.h),
+                        Text(
+                          'Restoran satış bilgilerini girin',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer.withAlpha(
+                              179,
                             ),
                           ),
-                        );
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 24.h),
+
+            // Restaurant name field
+            _buildFormField(
+              controller: _restaurantController,
+              label: 'Restoran İsmi',
+              hint: 'Restoran adını girin',
+              icon: CupertinoIcons.building_2_fill,
+              isRequired: true,
+              colorScheme: colorScheme,
+              theme: theme,
+            ),
+
+            SizedBox(height: 16.h),
+
+            // Product name field
+            _buildFormField(
+              controller: _productController,
+              label: 'Ürün Adı',
+              hint: 'Satılan ürünü girin',
+              icon: CupertinoIcons.bag_fill,
+              colorScheme: colorScheme,
+              theme: theme,
+            ),
+
+            SizedBox(height: 16.h),
+
+            // Quantity and unit row
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildFormField(
+                    controller: _quantityController,
+                    label: 'Miktar',
+                    hint: '0',
+                    icon: CupertinoIcons.number,
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) => _calculateTotalAmount(),
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(child: _buildUnitDropdown(colorScheme, theme)),
+              ],
+            ),
+
+            SizedBox(height: 16.h),
+
+            // Unit price field
+            _buildFormField(
+              controller: _unitPriceController,
+              label: 'Birim Fiyat',
+              hint: '0.00',
+              icon: CupertinoIcons.money_dollar_circle_fill,
+              keyboardType: TextInputType.number,
+              onChanged: (value) => _calculateTotalAmount(),
+              colorScheme: colorScheme,
+              theme: theme,
+            ),
+
+            SizedBox(height: 16.h),
+
+            // Total amount field (calculated)
+            _buildFormField(
+              controller: _totalAmountController,
+              label: 'Toplam Tutar (₺)',
+              hint: '0.00',
+              icon: CupertinoIcons.money_dollar,
+              keyboardType: TextInputType.number,
+              isRequired: true,
+              colorScheme: colorScheme,
+              theme: theme,
+              readOnly: false, // Allow manual edit
+            ),
+
+            SizedBox(height: 16.h),
+
+            // Notes field
+            _buildFormField(
+              controller: _notesController,
+              label: 'Notlar',
+              hint: 'Ek bilgiler (opsiyonel)',
+              icon: CupertinoIcons.doc_text_fill,
+              maxLines: 3,
+              colorScheme: colorScheme,
+              theme: theme,
+            ),
+
+            SizedBox(height: 32.h),
+
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    onPressed: _clearForm,
+                    label: 'Temizle',
+                    icon: CupertinoIcons.clear_circled,
+                    color: colorScheme.outline,
+                    textColor: colorScheme.onSurface,
+                    theme: theme,
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  flex: 2,
+                  child: _buildActionButton(
+                    onPressed: _isSubmitting ? null : _addRestaurantSale,
+                    label: _isSubmitting ? 'Ekleniyor...' : 'Satış Ekle',
+                    icon:
+                        _isSubmitting
+                            ? CupertinoIcons.clock
+                            : CupertinoIcons.add_circled_solid,
+                    color: colorScheme.primary,
+                    textColor: colorScheme.onPrimary,
+                    theme: theme,
+                  ),
+                ),
+              ],
+            ),
+
+            SizedBox(height: 24.h),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSalesRecordsTab(ColorScheme colorScheme, ThemeData theme) {
+    return RefreshIndicator(
+      onRefresh: _loadRestaurantSales,
+      child:
+          _isLoading
+              ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: colorScheme.primary),
+                    SizedBox(height: 16.h),
+                    Text(
+                      'Satış kayıtları yükleniyor...',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface.withAlpha(179),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+              : _restaurantSales.isEmpty
+              ? _buildEmptyState(colorScheme, theme)
+              : Column(
+                children: [
+                  // Header with stats
+                  Container(
+                    padding: EdgeInsets.all(16.w),
+                    margin: EdgeInsets.all(16.w),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          colorScheme.secondaryContainer.withAlpha(179),
+                          colorScheme.secondaryContainer.withAlpha(179),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16.r),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.shadow.withAlpha(25),
+                          blurRadius: 10,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(12.w),
+                          decoration: BoxDecoration(
+                            color: colorScheme.secondary,
+                            borderRadius: BorderRadius.circular(12.r),
+                          ),
+                          child: Icon(
+                            CupertinoIcons.chart_bar_fill,
+                            color: colorScheme.onSecondary,
+                            size: 24.w,
+                          ),
+                        ),
+                        SizedBox(width: 16.w),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Toplam ${_restaurantSales.length} Kayıt',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: colorScheme.onSecondaryContainer
+                                      .withAlpha(179),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 4.h),
+                              Text(
+                                _getTotalSalesAmount(),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onSecondaryContainer
+                                      .withAlpha(179),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Sales list
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _restaurantSales.length,
+                      padding: EdgeInsets.symmetric(horizontal: 16.w),
+                      itemBuilder: (context, index) {
+                        final sale = _restaurantSales[index];
+                        return _buildSaleCard(sale, colorScheme, theme);
                       },
                     ),
+                  ),
+                ],
+              ),
+    );
+  }
+
+  Widget _buildEmptyState(ColorScheme colorScheme, ThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: EdgeInsets.all(32.w),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withAlpha(77),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              CupertinoIcons.doc_text,
+              size: 64.w,
+              color: colorScheme.onSurfaceVariant.withAlpha(179),
+            ),
+          ),
+          SizedBox(height: 24.h),
+          Text(
+            'Henüz satış kaydı yok',
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: colorScheme.onSurface.withAlpha(179),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 8.h),
+          Text(
+            'İlk satışınızı kaydetmek için\n"Yeni Satış" sekmesini kullanın',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withAlpha(128),
+            ),
+          ),
+          SizedBox(height: 32.h),
+          FilledButton.icon(
+            onPressed: () => _tabController.animateTo(0),
+            icon: Icon(CupertinoIcons.add),
+            label: Text('Yeni Satış Ekle'),
+            style: FilledButton.styleFrom(
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+              padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 12.h),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildSaleCard(
+    Map<String, dynamic> sale,
+    ColorScheme colorScheme,
+    ThemeData theme,
+  ) {
+    final displayDate = DateFormatter.formatDisplayDate(sale['date']);
+    final isPayment = sale['productName'] == 'Ödeme Alındı';
+    final isDebt = sale['productName'] == 'Borç Kaydı';
+
+    Color cardColor =
+        isPayment
+            ? Colors.green
+            : isDebt
+            ? Colors.red
+            : colorScheme.primary;
+    IconData cardIcon =
+        isPayment
+            ? CupertinoIcons.money_dollar_circle_fill
+            : isDebt
+            ? CupertinoIcons.exclamationmark_triangle_fill
+            : CupertinoIcons.bag_fill;
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 12.h),
+      child: Card(
+        elevation: 2,
+        shadowColor: colorScheme.shadow.withAlpha(25),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.r),
+        ),
+        child: InkWell(
+          onTap: () => _showRestaurantSaleOptions(sale),
+          borderRadius: BorderRadius.circular(16.r),
+          child: Container(
+            padding: EdgeInsets.all(16.w),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: cardColor.withAlpha(25),
+                    borderRadius: BorderRadius.circular(12.r),
+                  ),
+                  child: Icon(cardIcon, color: cardColor, size: 24.w),
+                ),
+                SizedBox(width: 16.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        sale['restaurant'] ?? 'Bilinmeyen Restoran',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface.withAlpha(179),
+                        ),
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        sale['productName'] ?? 'Ürün belirtilmedi',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurface.withAlpha(128),
+                        ),
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        displayDate,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withAlpha(128),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 12.w,
+                    vertical: 8.h,
+                  ),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(20.r),
+                  ),
+                  child: Text(
+                    '${(sale['amount'] as num).toStringAsFixed(2)} ₺',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _getTotalSalesAmount() {
+    if (_restaurantSales.isEmpty) return 'Toplam: 0.00 ₺';
+
+    double total = _restaurantSales
+        .map((sale) => (sale['amount'] as num).toDouble())
+        .reduce((a, b) => a + b);
+
+    return 'Toplam: ${total.toStringAsFixed(2)} ₺';
+  }
+
+  Widget _buildFormField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required ColorScheme colorScheme,
+    required ThemeData theme,
+    bool isRequired = false,
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
+    bool readOnly = false,
+    Function(String)? onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RichText(
+          text: TextSpan(
+            text: label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+            children:
+                isRequired
+                    ? [
+                      TextSpan(
+                        text: ' *',
+                        style: TextStyle(color: colorScheme.error),
+                      ),
+                    ]
+                    : null,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          readOnly: readOnly,
+          onChanged: onChanged,
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: colorScheme.onSurface,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            prefixIcon: Icon(icon, color: colorScheme.primary),
+            filled: true,
+            fillColor: colorScheme.surfaceContainerHighest.withAlpha(30),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12.r),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12.r),
+              borderSide: BorderSide(
+                color: colorScheme.outline.withAlpha(30),
+                width: 1,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12.r),
+              borderSide: BorderSide(color: colorScheme.primary, width: 2),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12.r),
+              borderSide: BorderSide(color: colorScheme.error, width: 1),
+            ),
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: 16.w,
+              vertical: 16.h,
+            ),
+          ),
+          validator:
+              isRequired
+                  ? (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return '$label zorunludur';
+                    }
+                    return null;
+                  }
+                  : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUnitDropdown(ColorScheme colorScheme, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Birim',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withAlpha(30),
+            borderRadius: BorderRadius.circular(12.r),
+            border: Border.all(
+              color: colorScheme.outline.withAlpha(30),
+              width: 1,
+            ),
+          ),
+          child: DropdownButtonFormField<String>(
+            value: _selectedUnit,
+            decoration: InputDecoration(
+              prefixIcon: Icon(Icons.straighten, color: colorScheme.primary),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 16.w,
+                vertical: 16.h,
+              ),
+            ),
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onSurface,
+            ),
+            dropdownColor: colorScheme.surface,
+            borderRadius: BorderRadius.circular(12.r),
+            items:
+                ['kg', 'gr', 'adet', 'litre'].map((unit) {
+                  return DropdownMenuItem(value: unit, child: Text(unit));
+                }).toList(),
+            onChanged: (value) {
+              setState(() {
+                _selectedUnit = value!;
+              });
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButton({
+    required VoidCallback? onPressed,
+    required String label,
+    required IconData icon,
+    required Color color,
+    required Color textColor,
+    required ThemeData theme,
+  }) {
+    return SizedBox(
+      height: 56.h,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20.w),
+        label: Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: textColor,
+          elevation: 2,
+          shadowColor: color.withAlpha(30),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16.r),
+          ),
+          padding: EdgeInsets.symmetric(horizontal: 24.w),
+        ),
+      ),
+    );
+  }
+
+  void _clearForm() {
+    _restaurantController.clear();
+    _productController.clear();
+    _quantityController.clear();
+    _unitPriceController.clear();
+    _notesController.clear();
+    _totalAmountController.clear();
+    setState(() {
+      _selectedUnit = 'kg';
+    });
   }
 }

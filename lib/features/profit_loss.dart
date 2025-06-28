@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
 import '../models/expense.dart';
-import '../providers/sales_provider.dart';
 import '../widgets/custom_text_field.dart';
 import '../services/database/database_helper.dart';
+import '../core/utils/logger.dart';
 
 class ProfitLossPage extends StatefulWidget {
+  const ProfitLossPage({super.key});
+
   @override
-  _ProfitLossPageState createState() => _ProfitLossPageState();
+  State<ProfitLossPage> createState() => _ProfitLossPageState();
 }
 
-class _ProfitLossPageState extends State<ProfitLossPage> {
+class _ProfitLossPageState extends State<ProfitLossPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
@@ -21,16 +27,19 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
   List<Map<String, dynamic>> _incomes = [];
   double _totalIncome = 0;
   double _totalExpense = 0;
-  String _selectedPeriod = 'Bu Ay'; // "Bu Gün", "Bu Hafta", "Bu Ay", "Tümü"
+  String _selectedPeriod = 'Bu Ay';
+  final bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
     _loadData();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _descriptionController.dispose();
     _amountController.dispose();
     _categoryController.dispose();
@@ -219,7 +228,7 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
         _incomes = allIncomes;
       });
     } catch (e) {
-      print('Müşteri işlem geçmişi yüklenirken hata: $e');
+      Logger.error('Müşteri işlem geçmişi yüklenirken hata', e);
       setState(() {
         _incomes = [];
       });
@@ -287,18 +296,18 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
       totalIncome = salesTotal + manualTotal + restaurantTotal;
 
       // Hata ayıklama için logger ekleyelim
-      print('Kâr-Zarar Hesabı Detayları:');
-      print('Seçili Dönem: $_selectedPeriod');
-      print('Satışlardan Gelen Gelir: $salesTotal');
-      print('Manuel Gelirler: $manualTotal');
-      print('Restoran Satışları: $restaurantTotal');
-      print('Toplam Gelir: $totalIncome');
+      Logger.debug('Kâr-Zarar Hesabı Detayları:');
+      Logger.debug('Seçili Dönem: $_selectedPeriod');
+      Logger.debug('Satışlardan Gelen Gelir: $salesTotal');
+      Logger.debug('Manuel Gelirler: $manualTotal');
+      Logger.debug('Restoran Satışları: $restaurantTotal');
+      Logger.debug('Toplam Gelir: $totalIncome');
 
       setState(() {
         _totalIncome = totalIncome;
       });
     } catch (e) {
-      print('Gelir hesaplanırken hata: $e');
+      Logger.error('Gelir hesaplanırken hata', e);
       setState(() {
         _totalIncome = 0;
       });
@@ -492,14 +501,14 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gider başarıyla eklendi'),
-            backgroundColor: Colors.green,
+            backgroundColor: Theme.of(context).colorScheme.primary,
           ),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gider eklenirken hata oluştu: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -540,7 +549,7 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gider güncellenirken hata oluştu: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -592,14 +601,14 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gelir başarıyla eklendi'),
-            backgroundColor: Colors.green,
+            backgroundColor: Theme.of(context).colorScheme.primary,
           ),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gelir eklenirken hata oluştu: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -617,14 +626,14 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Gelir başarıyla silindi'),
-          backgroundColor: Colors.green,
+          backgroundColor: Theme.of(context).colorScheme.primary,
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Gelir silinirken hata oluştu: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -727,14 +736,14 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gelir başarıyla güncellendi'),
-            backgroundColor: Colors.green,
+            backgroundColor: Theme.of(context).colorScheme.primary,
           ),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gelir güncellenirken hata oluştu: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -743,398 +752,479 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Kâr veya zarar hesapla
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final profit = _totalIncome - _totalExpense;
     final isProfitable = profit >= 0;
 
     return Scaffold(
-      backgroundColor: Color(0xFFD2B48C), // Tan rengi
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: Text('Kâr-Zarar Hesabı'),
+        title: Text(
+          'Kâr-Zarar Analizi',
+          style: theme.textTheme.titleLarge?.copyWith(
+            color: colorScheme.onPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        elevation: 0,
         actions: [
-          PopupMenuButton<String>(
-            icon: Icon(Icons.filter_list),
-            onSelected: (value) {
-              setState(() {
-                _selectedPeriod = value;
-                _loadData();
-              });
-            },
-            itemBuilder:
-                (context) => [
-                  PopupMenuItem(value: 'Bu Gün', child: Text('Bu Gün')),
-                  PopupMenuItem(value: 'Bu Hafta', child: Text('Bu Hafta')),
-                  PopupMenuItem(value: 'Bu Ay', child: Text('Bu Ay')),
-                  PopupMenuItem(value: 'Tümü', child: Text('Tümü')),
-                ],
+          Container(
+            margin: EdgeInsets.only(right: 16.w),
+            child: DropdownButton<String>(
+              value: _selectedPeriod,
+              icon: Icon(CupertinoIcons.calendar, color: colorScheme.onPrimary),
+              underline: SizedBox.shrink(),
+              dropdownColor: colorScheme.surface,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+              items:
+                  ['Bu Gün', 'Bu Hafta', 'Bu Ay', 'Tümü']
+                      .map(
+                        (period) => DropdownMenuItem(
+                          value: period,
+                          child: Text(period),
+                        ),
+                      )
+                      .toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _selectedPeriod = value;
+                  });
+                  _loadData();
+                }
+              },
+            ),
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: colorScheme.onPrimary,
+          labelColor: colorScheme.onPrimary,
+          unselectedLabelColor: colorScheme.onPrimary.withAlpha(179),
+          tabs: [
+            Tab(icon: Icon(CupertinoIcons.chart_pie_fill), text: 'Özet'),
+            Tab(
+              icon: Icon(CupertinoIcons.arrow_up_circle_fill),
+              text: 'Gelirler',
+            ),
+            Tab(
+              icon: Icon(CupertinoIcons.arrow_down_circle_fill),
+              text: 'Giderler',
+            ),
+          ],
+        ),
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Özet Kartları
-              Text(
-                '$_selectedPeriod Özeti',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildSummaryTab(colorScheme, theme, profit, isProfitable),
+          _buildIncomesTab(colorScheme, theme),
+          _buildExpensesTab(colorScheme, theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryTab(
+    ColorScheme colorScheme,
+    ThemeData theme,
+    double profit,
+    bool isProfitable,
+  ) {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: SingleChildScrollView(
+        physics: AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Period Header
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(20.w),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    colorScheme.primaryContainer.withAlpha(179),
+                    colorScheme.primaryContainer.withAlpha(179),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16.r),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.shadow.withAlpha(25),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
               ),
-              SizedBox(height: 12),
-              Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: _buildSummaryCard(
-                      title: 'Gelir',
-                      amount: _totalIncome,
-                      icon: Icons.arrow_upward,
-                      color: Colors.green,
+                  Icon(
+                    CupertinoIcons.calendar_today,
+                    color: colorScheme.primary,
+                    size: 32.w,
+                  ),
+                  SizedBox(height: 8.h),
+                  Text(
+                    '$_selectedPeriod Özeti',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      color: colorScheme.onPrimaryContainer.withAlpha(179),
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: _buildSummaryCard(
-                      title: 'Gider',
-                      amount: _totalExpense,
-                      icon: Icons.arrow_downward,
-                      color: Colors.red,
+                  SizedBox(height: 4.h),
+                  Text(
+                    DateFormat('dd MMMM yyyy', 'tr_TR').format(DateTime.now()),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onPrimaryContainer.withAlpha(179),
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 12),
-              _buildSummaryCard(
-                title: isProfitable ? 'Kâr' : 'Zarar',
-                amount: profit.abs(),
-                icon: isProfitable ? Icons.trending_up : Icons.trending_down,
-                color: isProfitable ? Colors.green : Colors.red,
-                fullWidth: true,
-              ),
+            ),
 
-              SizedBox(height: 24),
+            SizedBox(height: 24.h),
 
-              // İşlem Butonları
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _showAddIncomeDialog,
-                      icon: Icon(Icons.add),
-                      label: Text('Gelir Ekle'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
+            // Income & Expense Cards
+            Row(
+              children: [
+                Expanded(
+                  child: _buildMetricCard(
+                    colorScheme: colorScheme,
+                    theme: theme,
+                    title: 'Gelir',
+                    amount: _totalIncome,
+                    icon: CupertinoIcons.arrow_up_circle_fill,
+                    color: Colors.green,
+                    isPositive: true,
                   ),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _showAddExpenseDialog,
-                      icon: Icon(Icons.add),
-                      label: Text('Gider Ekle'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
+                ),
+                SizedBox(width: 16.w),
+                Expanded(
+                  child: _buildMetricCard(
+                    colorScheme: colorScheme,
+                    theme: theme,
+                    title: 'Gider',
+                    amount: _totalExpense,
+                    icon: CupertinoIcons.arrow_down_circle_fill,
+                    color: Colors.red,
+                    isPositive: false,
                   ),
-                ],
-              ),
+                ),
+              ],
+            ),
 
-              SizedBox(height: 24),
+            SizedBox(height: 16.h),
 
-              // Gelirler ve Giderler Bölümü
-              Row(
-                children: [
-                  // Gelirler Bölümü
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Gelirler',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 8),
-                        if (_incomes.isEmpty)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.trending_up,
-                                    size: 32,
-                                    color: Colors.grey,
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    'Henüz gelir kaydı yok',
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        else
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
-                            child: ListView.builder(
-                              physics: NeverScrollableScrollPhysics(),
-                              shrinkWrap: true,
-                              itemCount: _incomes.length,
-                              itemBuilder: (context, index) {
-                                final income = _incomes[index];
-                                final date = DateFormat('dd.MM.yyyy').format(
-                                  DateFormat(
-                                    'yyyy-MM-dd HH:mm:ss',
-                                  ).parse(income['date']),
-                                );
-
-                                return Dismissible(
-                                  key: Key(income['id'].toString()),
-                                  background: Container(
-                                    color: Colors.red,
-                                    alignment: Alignment.centerRight,
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                    ),
-                                    child: Icon(
-                                      Icons.delete,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  direction: DismissDirection.endToStart,
-                                  confirmDismiss: (direction) async {
-                                    return await showDialog<bool>(
-                                      context: context,
-                                      builder:
-                                          (context) => AlertDialog(
-                                            title: Text('Geliri Sil'),
-                                            content: Text(
-                                              'Bu gelir kaydını silmek istediğinize emin misiniz?',
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed:
-                                                    () => Navigator.of(
-                                                      context,
-                                                    ).pop(false),
-                                                child: Text('İptal'),
-                                              ),
-                                              TextButton(
-                                                onPressed:
-                                                    () => Navigator.of(
-                                                      context,
-                                                    ).pop(true),
-                                                child: Text('Sil'),
-                                                style: TextButton.styleFrom(
-                                                  foregroundColor: Colors.red,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                    );
-                                  },
-                                  onDismissed: (direction) {
-                                    _deleteIncome(income['id']);
-                                  },
-                                  child: Card(
-                                    margin: EdgeInsets.only(bottom: 8),
-                                    child: ListTile(
-                                      leading: CircleAvatar(
-                                        backgroundColor: Colors.green,
-                                        child: Icon(
-                                          Icons.attach_money,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                      ),
-                                      title: Text(
-                                        income['description'],
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      subtitle: Text(
-                                        date,
-                                        style: TextStyle(fontSize: 12),
-                                      ),
-                                      trailing: Text(
-                                        '${income['amount'].toStringAsFixed(2)} ₺',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.green,
-                                        ),
-                                      ),
-                                      onTap:
-                                          () => _showEditIncomeDialog(income),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                      ],
+            // Profit/Loss Card
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(24.w),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors:
+                      isProfitable
+                          ? [Colors.green.shade400, Colors.green.shade600]
+                          : [Colors.red.shade400, Colors.red.shade600],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20.r),
+                boxShadow: [
+                  BoxShadow(
+                    color: (isProfitable ? Colors.green : Colors.red).withAlpha(
+                      77,
                     ),
-                  ),
-
-                  // Giderler Bölümü
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Giderler',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 8),
-                        if (_expenses.isEmpty)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.trending_down,
-                                    size: 32,
-                                    color: Colors.grey,
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    'Henüz gider kaydı yok',
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        else
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8.0),
-                            child: ListView.builder(
-                              physics: NeverScrollableScrollPhysics(),
-                              shrinkWrap: true,
-                              itemCount: _expenses.length,
-                              itemBuilder: (context, index) {
-                                final expense = _expenses[index];
-                                final date = DateFormat('dd.MM.yyyy').format(
-                                  DateFormat(
-                                    'yyyy-MM-dd HH:mm:ss',
-                                  ).parse(expense.date),
-                                );
-
-                                return Card(
-                                  margin: EdgeInsets.only(bottom: 8),
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: _getCategoryColor(
-                                        expense.category,
-                                      ),
-                                      child: Icon(
-                                        _getCategoryIcon(expense.category),
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                    ),
-                                    title: Text(
-                                      expense.description,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    subtitle: Text(
-                                      date,
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                    trailing: Text(
-                                      '${expense.amount.toStringAsFixed(2)} ₺',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.red,
-                                      ),
-                                    ),
-                                    onTap:
-                                        () => _showAddExpenseDialog(
-                                          expense: expense,
-                                        ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
+                    blurRadius: 15,
+                    offset: Offset(0, 8),
                   ),
                 ],
               ),
-            ],
-          ),
+              child: Column(
+                children: [
+                  Icon(
+                    isProfitable
+                        ? CupertinoIcons.chart_bar_alt_fill
+                        : CupertinoIcons.exclamationmark_triangle_fill,
+                    color: Colors.white,
+                    size: 40.w,
+                  ),
+                  SizedBox(height: 12.h),
+                  Text(
+                    isProfitable ? 'Kâr' : 'Zarar',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 8.h),
+                  Text(
+                    '${profit.abs().toStringAsFixed(2)} ₺',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 4.h),
+                  Text(
+                    isProfitable
+                        ? 'Tebrikler! Kâr elde ediyorsunuz'
+                        : 'Dikkat! Zarar durumundasınız',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withAlpha(230),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 32.h),
+
+            // Quick Actions
+            Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    onPressed: () {
+                      _showAddIncomeDialog();
+                    },
+                    label: 'Gelir Ekle',
+                    icon: CupertinoIcons.add_circled_solid,
+                    color: Colors.green,
+                    theme: theme,
+                  ),
+                ),
+                SizedBox(width: 16.w),
+                Expanded(
+                  child: _buildActionButton(
+                    onPressed: () {
+                      _showAddExpenseDialog();
+                    },
+                    label: 'Gider Ekle',
+                    icon: CupertinoIcons.minus_circled,
+                    color: Colors.red,
+                    theme: theme,
+                  ),
+                ),
+              ],
+            ),
+
+            SizedBox(height: 24.h),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildSummaryCard({
+  Widget _buildMetricCard({
+    required ColorScheme colorScheme,
+    required ThemeData theme,
     required String title,
     required double amount,
     required IconData icon,
     required Color color,
-    bool fullWidth = false,
+    required bool isPositive,
   }) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        width: fullWidth ? double.infinity : null,
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 24),
-                SizedBox(width: 8),
-                Text(
-                  title,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 16),
-                ),
-              ],
+    return Container(
+      padding: EdgeInsets.all(20.w),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: color.withAlpha(51), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withAlpha(13),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: EdgeInsets.all(8.w),
+            decoration: BoxDecoration(
+              color: color.withAlpha(25),
+              borderRadius: BorderRadius.circular(8.r),
             ),
-            SizedBox(height: 8),
+            child: Icon(icon, color: color, size: 24.w),
+          ),
+          SizedBox(height: 12.h),
+          Text(
+            title,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withAlpha(179),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 4.h),
+          Text(
+            '${amount.toStringAsFixed(2)} ₺',
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required VoidCallback onPressed,
+    required String label,
+    required IconData icon,
+    required Color color,
+    required ThemeData theme,
+  }) {
+    return SizedBox(
+      height: 56.h,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20.w),
+        label: Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          elevation: 4,
+          shadowColor: color.withAlpha(77),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16.r),
+          ),
+          padding: EdgeInsets.symmetric(horizontal: 24.w),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIncomesTab(ColorScheme colorScheme, ThemeData theme) {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child:
+          _isLoading
+              ? Center(
+                child: CircularProgressIndicator(color: colorScheme.primary),
+              )
+              : _incomes.isEmpty
+              ? _buildEmptyState(
+                colorScheme: colorScheme,
+                theme: theme,
+                icon: CupertinoIcons.arrow_up_circle,
+                title: 'Henüz gelir kaydı yok',
+                subtitle: 'İlk gelirinizi eklemek için butona tıklayın',
+                actionLabel: 'Gelir Ekle',
+                onAction: () => _showAddIncomeDialog(),
+              )
+              : ListView.builder(
+                padding: EdgeInsets.all(16.w),
+                itemCount: _incomes.length,
+                itemBuilder: (context, index) {
+                  final income = _incomes[index];
+                  return _buildIncomeCard(income, colorScheme, theme);
+                },
+              ),
+    );
+  }
+
+  Widget _buildExpensesTab(ColorScheme colorScheme, ThemeData theme) {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child:
+          _isLoading
+              ? Center(
+                child: CircularProgressIndicator(color: colorScheme.primary),
+              )
+              : _expenses.isEmpty
+              ? _buildEmptyState(
+                colorScheme: colorScheme,
+                theme: theme,
+                icon: CupertinoIcons.arrow_down_circle,
+                title: 'Henüz gider kaydı yok',
+                subtitle: 'İlk giderinizi eklemek için butona tıklayın',
+                actionLabel: 'Gider Ekle',
+                onAction: () => _showAddExpenseDialog(),
+              )
+              : ListView.builder(
+                padding: EdgeInsets.all(16.w),
+                itemCount: _expenses.length,
+                itemBuilder: (context, index) {
+                  final expense = _expenses[index];
+                  return _buildExpenseCard(expense, colorScheme, theme);
+                },
+              ),
+    );
+  }
+
+  Widget _buildEmptyState({
+    required ColorScheme colorScheme,
+    required ThemeData theme,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String actionLabel,
+    required VoidCallback onAction,
+  }) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(32.w),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(32.w),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withAlpha(77),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                size: 64.w,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            SizedBox(height: 24.h),
             Text(
-              '${amount.toStringAsFixed(2)} ₺',
-              style: TextStyle(
-                fontSize: 24,
+              title,
+              style: theme.textTheme.titleLarge?.copyWith(
+                color: colorScheme.onSurface,
                 fontWeight: FontWeight.bold,
-                color: color,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              subtitle,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurface.withAlpha(128),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 32.h),
+            FilledButton.icon(
+              onPressed: onAction,
+              icon: Icon(CupertinoIcons.add),
+              label: Text(actionLabel),
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.primary,
+                foregroundColor: colorScheme.onPrimary,
+                padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 12.h),
               ),
             ),
           ],
@@ -1143,41 +1233,187 @@ class _ProfitLossPageState extends State<ProfitLossPage> {
     );
   }
 
-  Color _getCategoryColor(String category) {
-    switch (category.toLowerCase()) {
-      case 'kira':
-        return Colors.purple;
-      case 'elektrik':
-        return Colors.orange;
-      case 'su':
-        return Colors.blue;
-      case 'doğalgaz':
-        return Colors.deepOrange;
-      case 'personel':
-        return Colors.teal;
-      case 'vergi':
-        return Colors.brown;
-      default:
-        return Colors.grey;
-    }
+  Widget _buildIncomeCard(
+    Map<String, dynamic> income,
+    ColorScheme colorScheme,
+    ThemeData theme,
+  ) {
+    final date = DateFormat(
+      'dd.MM.yyyy',
+    ).format(DateFormat('yyyy-MM-dd HH:mm:ss').parse(income['date']));
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 12.h),
+      child: Card(
+        elevation: 2,
+        shadowColor: colorScheme.shadow.withAlpha(25),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.r),
+        ),
+        child: InkWell(
+          onTap: () => _showEditIncomeDialog(income),
+          borderRadius: BorderRadius.circular(16.r),
+          child: Container(
+            padding: EdgeInsets.all(16.w),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withAlpha(25),
+                    borderRadius: BorderRadius.circular(12.r),
+                  ),
+                  child: Icon(
+                    CupertinoIcons.arrow_up_circle_fill,
+                    color: Colors.green,
+                    size: 24.w,
+                  ),
+                ),
+                SizedBox(width: 16.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        income['description'] ?? 'Gelir',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        income['category'] ?? 'Genel',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurface.withAlpha(128),
+                        ),
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        date,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withAlpha(128),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 12.w,
+                    vertical: 8.h,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: BorderRadius.circular(20.r),
+                  ),
+                  child: Text(
+                    '+${(income['amount'] as num).toStringAsFixed(2)} ₺',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
-  IconData _getCategoryIcon(String category) {
-    switch (category.toLowerCase()) {
-      case 'kira':
-        return Icons.home;
-      case 'elektrik':
-        return Icons.electric_bolt;
-      case 'su':
-        return Icons.water_drop;
-      case 'doğalgaz':
-        return Icons.local_fire_department;
-      case 'personel':
-        return Icons.people;
-      case 'vergi':
-        return Icons.receipt;
-      default:
-        return Icons.shopping_bag;
-    }
+  Widget _buildExpenseCard(
+    Expense expense,
+    ColorScheme colorScheme,
+    ThemeData theme,
+  ) {
+    final date = DateFormat(
+      'dd.MM.yyyy',
+    ).format(DateFormat('yyyy-MM-dd HH:mm:ss').parse(expense.date));
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 12.h),
+      child: Card(
+        elevation: 2,
+        shadowColor: colorScheme.shadow.withAlpha(25),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.r),
+        ),
+        child: InkWell(
+          onTap: () => _showAddExpenseDialog(expense: expense),
+          borderRadius: BorderRadius.circular(16.r),
+          child: Container(
+            padding: EdgeInsets.all(16.w),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withAlpha(25),
+                    borderRadius: BorderRadius.circular(12.r),
+                  ),
+                  child: Icon(
+                    CupertinoIcons.arrow_down_circle_fill,
+                    color: Colors.red,
+                    size: 24.w,
+                  ),
+                ),
+                SizedBox(width: 16.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        expense.description,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        expense.category,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurface.withAlpha(128),
+                        ),
+                      ),
+                      SizedBox(height: 4.h),
+                      Text(
+                        date,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withAlpha(128),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 12.w,
+                    vertical: 8.h,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(20.r),
+                  ),
+                  child: Text(
+                    '-${expense.amount.toStringAsFixed(2)} ₺',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

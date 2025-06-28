@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 class RestaurantSalesPage extends StatefulWidget {
+  const RestaurantSalesPage({super.key});
+
   @override
-  _RestaurantSalesPageState createState() => _RestaurantSalesPageState();
+  State<RestaurantSalesPage> createState() => _RestaurantSalesPageState();
 }
 
 class _RestaurantSalesPageState extends State<RestaurantSalesPage> {

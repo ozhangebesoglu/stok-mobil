@@ -2,18 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+
 import '../models/product.dart';
 import '../models/customer.dart';
 import '../models/sale.dart';
 import '../providers/stock_provider.dart';
 import '../providers/customer_provider.dart';
 import '../providers/sales_provider.dart';
+import '../services/database/database_helper.dart';
 import '../widgets/custom_text_field.dart';
-import '../main.dart'; // Ana sayfadaki istatistikleri güncellemek için
+// Ana sayfadaki istatistikleri güncellemek için
 
 class SalesManagementPage extends StatefulWidget {
+  const SalesManagementPage({super.key});
+
   @override
-  _SalesManagementPageState createState() => _SalesManagementPageState();
+  State<SalesManagementPage> createState() => _SalesManagementPageState();
 }
 
 class _SalesManagementPageState extends State<SalesManagementPage> {
@@ -28,7 +32,6 @@ class _SalesManagementPageState extends State<SalesManagementPage> {
       TextEditingController(); // Müşteri seçilmediğinde manuel giriş için
 
   bool _isPaid = true;
-  List<Sale> _recentSales = [];
   String _searchQuery = '';
   bool _isQuickSale = false; // Hızlı satış modu (müşterisiz)
 
@@ -47,13 +50,7 @@ class _SalesManagementPageState extends State<SalesManagementPage> {
   }
 
   Future<void> _loadRecentSales() async {
-    final salesProvider = Provider.of<SalesProvider>(context, listen: false);
-    await salesProvider.loadSales();
-
-    setState(() {
-      _recentSales =
-          salesProvider.sales.take(10).toList(); // Son 10 satışı göster
-    });
+    // Method kept for compatibility but no longer used
   }
 
   void _showAddSaleDialog() {
@@ -387,46 +384,90 @@ class _SalesManagementPageState extends State<SalesManagementPage> {
           return;
         }
 
-        // Satış kaydı oluştur
-        final sale = Sale(
-          customerId: _isQuickSale ? null : _selectedCustomer?.id,
-          customerName:
-              _isQuickSale
-                  ? (_customerNameController.text.isNotEmpty
-                      ? _customerNameController.text
-                      : "Günlük Müşteri")
-                  : _selectedCustomer!.name,
-          amount: price,
-          date: DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
-          isPaid:
-              _isQuickSale
-                  ? true
-                  : _isPaid, // Günlük satışlar her zaman ödenmiş olur
-          productId: product.id,
-          productName: product.name,
-          quantity: quantity,
-          unit: product.unit,
-          unitPrice: price / quantity,
-        );
+        final currentDate = DateFormat(
+          'yyyy-MM-dd HH:mm:ss',
+        ).format(DateTime.now());
 
-        // Satışı kaydet
-        await salesProvider.addSale(sale);
+        // Eğer seçilen müşteri restoran tipindeyse restaurant_sales tablosuna kaydet
+        if (!_isQuickSale &&
+            _selectedCustomer != null &&
+            _selectedCustomer!.type == 'restaurant') {
+          // Restoran satışı olarak kaydet
+          final db = await DatabaseHelper().database;
+          await db.insert('restaurant_sales', {
+            'restaurant': _selectedCustomer!.name,
+            'amount': price,
+            'date': currentDate,
+            'productName': product.name,
+            'quantity': quantity,
+            'unit': product.unit,
+            'unitPrice': price / quantity,
+            'notes': 'Satış Yönetiminden',
+            'isPaid': _isPaid ? 1 : 0,
+          });
+
+          // Eğer borç ise müşteri bakiyesini güncelle
+          if (!_isPaid) {
+            await customerProvider.updateBalance(_selectedCustomer!.id!, price);
+          }
+        } else {
+          // Normal müşteri satışı olarak kaydet
+          final sale = Sale(
+            customerId: _isQuickSale ? null : _selectedCustomer?.id,
+            customerName:
+                _isQuickSale
+                    ? (_customerNameController.text.isNotEmpty
+                        ? _customerNameController.text
+                        : "Günlük Müşteri")
+                    : _selectedCustomer!.name,
+            amount: price,
+            date: currentDate,
+            isPaid:
+                _isQuickSale
+                    ? true
+                    : _isPaid, // Günlük satışlar her zaman ödenmiş olur
+            productId: product.id,
+            productName: product.name,
+            quantity: quantity,
+            unit: product.unit,
+            unitPrice: price / quantity,
+          );
+
+          // Satışı kaydet
+          await salesProvider.addSale(sale);
+
+          // Eğer borç ise müşteri bakiyesini güncelle (sadece müşterili satışlarda)
+          if (!_isQuickSale && !_isPaid && _selectedCustomer != null) {
+            await customerProvider.updateBalance(_selectedCustomer!.id!, price);
+          }
+        }
 
         // Stok miktarını güncelle
-        await stockProvider.updateStock(product.id!, -quantity);
-
-        // Eğer borç ise müşteri bakiyesini güncelle (sadece müşterili satışlarda)
-        if (!_isQuickSale && !_isPaid && _selectedCustomer != null) {
-          await customerProvider.updateBalance(_selectedCustomer!.id!, price);
-        }
+        await stockProvider.updateStock(
+          productId: product.id!,
+          newQuantity: -quantity,
+        );
 
         Navigator.of(context).pop();
 
         // Son satışları güncelle
         _loadRecentSales();
 
-        // Ana sayfadaki istatistikleri güncelle
-        HomePage.updateStatistics(context);
+        // Success feedback - stay on same page instead of going home
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Satış başarıyla silindi'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -460,7 +501,10 @@ class _SalesManagementPageState extends State<SalesManagementPage> {
 
       // Stok miktarını geri ekle
       if (sale.productId != null) {
-        await stockProvider.updateStock(sale.productId!, sale.quantity);
+        await stockProvider.updateStock(
+          productId: sale.productId!,
+          newQuantity: sale.quantity,
+        );
       }
 
       // Eğer borç ise müşteri bakiyesini düzelt
@@ -468,8 +512,21 @@ class _SalesManagementPageState extends State<SalesManagementPage> {
         await customerProvider.updateBalance(sale.customerId!, -sale.amount);
       }
 
-      // Ana sayfadaki istatistikleri güncelle
-      HomePage.updateStatistics(context);
+      // Success feedback - stay on same page instead of going home
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Satış başarıyla eklendi'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
 
       // Son satışları güncelle
       _loadRecentSales();
@@ -644,10 +701,10 @@ class _SalesManagementPageState extends State<SalesManagementPage> {
                                             () => Navigator.pop(context, false),
                                       ),
                                       CupertinoDialogAction(
-                                        child: Text('Sil'),
                                         isDestructiveAction: true,
                                         onPressed:
                                             () => Navigator.pop(context, true),
+                                        child: Text('Sil'),
                                       ),
                                     ],
                                   ),
@@ -745,7 +802,7 @@ class _SalesManagementPageState extends State<SalesManagementPage> {
           borderRadius: BorderRadius.circular(25),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withAlpha(25),
               blurRadius: 8,
               offset: Offset(0, 4),
             ),

@@ -1,0 +1,21 @@
+{
+  "name": "esnaf-defterim",
+  "version": "1.0.0",
+  "description": "Modern kasap dükkanı yönetim sistemi",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm start",
+    "build": "cd client && npm run build",
+    "install-all": "npm install && cd server && npm install && cd ../client && npm install",
+    "clean": "npm run clean-flutter",
+    "clean-flutter": "rm -rf android ios linux macos windows web lib test pubspec.yaml pubspec.lock .metadata analysis_options.yaml"
+  },
+  "keywords": ["kasap", "esnaf", "yönetim", "stok", "satış"],
+  "author": "Esnaf Defterim",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -13,3 +13,249 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
+
+model Kullanici {
+  kullanici_id      Int       @id @default(autoincrement())
+  isim              String
+  email             String    @unique
+  telefon           String?
+  sifre_hash        String
+  rol               String    @default("kullanici")
+  aktif             Boolean   @default(true)
+  olusturma_tarihi  DateTime  @default(now())
+  guncelleme_tarihi DateTime  @default(now()) @updatedAt
+
+  stokHareketleri   StokHareketi[]
+  satislar          Satis[]
+  odemeler          Odeme[]
+  giderler          Gider[]
+  kasaIslemleri     Kasa[]
+
+  @@map("kullanicilar")
+}
+
+model Tedarikci {
+  tedarikci_id      Int       @id @default(autoincrement())
+  isim              String
+  telefon           String?
+  email             String?
+  adres             String?
+  vergi_no          String?
+  notlar            String?
+  aktif             Boolean   @default(true)
+  olusturma_tarihi  DateTime  @default(now())
+  guncelleme_tarihi DateTime  @default(now()) @updatedAt
+
+  stoklar           Stok[]
+  giderler          Gider[]
+
+  @@map("tedarikciler")
+}
+
+model Musteri {
+  musteri_id        Int       @id @default(autoincrement())
+  isim              String
+  telefon           String?
+  email             String?
+  adres             String?
+  musteri_tipi      String    @default("Bireysel")
+  vergi_no          String?
+  aktif             Boolean   @default(true)
+  olusturma_tarihi  DateTime  @default(now())
+  guncelleme_tarihi DateTime  @default(now()) @updatedAt
+
+  satislar          Satis[]
+  borcAlacaklar     BorcAlacak[]
+
+  @@index([telefon], map: "idx_musteriler_telefon")
+  @@map("musteriler")
+}
+
+model Kategori {
+  kategori_id      Int      @id @default(autoincrement())
+  kategori_adi     String
+  aciklama         String?
+  aktif            Boolean  @default(true)
+  olusturma_tarihi DateTime @default(now())
+
+  stoklar          Stok[]
+
+  @@map("kategoriler")
+}
+
+model Stok {
+  stok_id             Int        @id @default(autoincrement())
+  urun_adi            String
+  kategori_id         Int?
+  toplam_agirlik      Float
+  kalan_agirlik       Float
+  tedarikci_id        Int?
+  alis_fiyati         Decimal?   @db.Decimal(8, 2)
+  satis_fiyati        Decimal?   @db.Decimal(8, 2)
+  kar_orani           Decimal?   @db.Decimal(5, 2)
+  kesim_tarihi        DateTime?
+  son_kullanma_tarihi DateTime?
+  aktif               Boolean    @default(true)
+  olusturma_tarihi    DateTime   @default(now())
+  guncelleme_tarihi   DateTime   @default(now()) @updatedAt
+
+  kategori            Kategori?  @relation(fields: [kategori_id], references: [kategori_id])
+  tedarikci           Tedarikci? @relation(fields: [tedarikci_id], references: [tedarikci_id])
+  hareketler          StokHareketi[]
+  detaylar            SatisDetayi[]
+
+  @@index([urun_adi], map: "idx_stoklar_urun_adi")
+  @@map("stoklar")
+}
+
+model StokHareketi {
+  hareket_id     Int       @id @default(autoincrement())
+  stok_id        Int
+  kullanici_id   Int?
+  islem_turu     String
+  miktar         Float
+  onceki_miktar  Float?
+  sonraki_miktar Float?
+  islem_tarihi   DateTime  @default(now())
+  aciklama       String?
+  satis_id       Int?
+
+  stok           Stok      @relation(fields: [stok_id], references: [stok_id])
+  kullanici      Kullanici? @relation(fields: [kullanici_id], references: [kullanici_id])
+  satis          Satis?     @relation(fields: [satis_id], references: [satis_id])
+
+  @@index([islem_tarihi], map: "idx_stok_hareketleri_tarihi")
+  @@map("stok_hareketleri")
+}
+
+model Satis {
+  satis_id          Int          @id @default(autoincrement())
+  kullanici_id      Int
+  musteri_id        Int?
+  satis_turu        String       @default("Perakende")
+  toplam_miktar     Float
+  ara_toplam        Decimal      @db.Decimal(10, 2)
+  indirim_orani     Decimal?     @default(0) @db.Decimal(5, 2)
+  indirim_tutari    Decimal?     @default(0) @db.Decimal(10, 2)
+  toplam_tutar      Decimal      @db.Decimal(10, 2)
+  odenen_tutar      Decimal?     @default(0) @db.Decimal(10, 2)
+  kalan_tutar       Decimal?     @default(0) @db.Decimal(10, 2)
+  durum             String       @default("Tamamlandı")
+  satis_tarihi      DateTime     @default(now())
+  olusturma_tarihi  DateTime     @default(now())
+  guncelleme_tarihi DateTime     @default(now()) @updatedAt
+
+  kullanici         Kullanici    @relation(fields: [kullanici_id], references: [kullanici_id])
+  musteri           Musteri?     @relation(fields: [musteri_id], references: [musteri_id])
+  detaylar          SatisDetayi[]
+  odemeler          Odeme[]
+  stokHareketleri   StokHareketi[]
+  borcAlacaklar     BorcAlacak[]
+
+  @@index([satis_tarihi], map: "idx_satislar_tarihi")
+  @@map("satislar")
+}
+
+model SatisDetayi {
+  detay_id    Int      @id @default(autoincrement())
+  satis_id    Int
+  stok_id     Int
+  urun_adi    String
+  miktar      Float
+  birim_fiyat Decimal  @db.Decimal(8, 2)
+  ara_toplam  Decimal  @db.Decimal(10, 2)
+  indirim_orani Decimal? @default(0) @db.Decimal(5, 2)
+  toplam      Decimal  @db.Decimal(10, 2)
+
+  satis       Satis    @relation(fields: [satis_id], references: [satis_id])
+  stok        Stok     @relation(fields: [stok_id], references: [stok_id])
+
+  @@map("satis_detaylari")
+}
+
+model Odeme {
+  odeme_id       Int       @id @default(autoincrement())
+  satis_id       Int?
+  kullanici_id   Int?
+  odeme_turu     String
+  tutar          Decimal   @db.Decimal(10, 2)
+  odeme_tarihi   DateTime  @default(now())
+  aciklama       String?
+  durum          String    @default("Onaylandı")
+  olusturma_tarihi DateTime @default(now())
+
+  satis          Satis?    @relation(fields: [satis_id], references: [satis_id])
+  kullanici      Kullanici? @relation(fields: [kullanici_id], references: [kullanici_id])
+
+  @@index([odeme_tarihi], map: "idx_odemeler_tarihi")
+  @@map("odemeler")
+}
+
+model BorcAlacak {
+  borc_alacak_id   Int       @id @default(autoincrement())
+  musteri_id       Int
+  satis_id         Int?
+  tutar            Decimal   @db.Decimal(10, 2)
+  kalan_tutar      Decimal   @db.Decimal(10, 2)
+  tur              String
+  durum            String    @default("Açık")
+  vade_tarihi      DateTime?
+  tarih            DateTime  @default(now())
+  aciklama         String?
+  olusturma_tarihi DateTime  @default(now())
+  guncelleme_tarihi DateTime @default(now()) @updatedAt
+
+  musteri          Musteri   @relation(fields: [musteri_id], references: [musteri_id])
+  satis            Satis?    @relation(fields: [satis_id], references: [satis_id])
+
+  @@map("borclar_alacaklar")
+}
+
+model Gider {
+  gider_id         Int       @id @default(autoincrement())
+  kullanici_id     Int?
+  gider_kategori   String
+  gider_adi        String
+  tutar            Decimal   @db.Decimal(10, 2)
+  tarih            DateTime  @default(now())
+  aciklama         String?
+  fatura_no        String?
+  tedarikci_id     Int?
+  olusturma_tarihi DateTime  @default(now())
+  guncelleme_tarihi DateTime @default(now()) @updatedAt
+
+  kullanici        Kullanici? @relation(fields: [kullanici_id], references: [kullanici_id])
+  tedarikci        Tedarikci? @relation(fields: [tedarikci_id], references: [tedarikci_id])
+
+  @@index([tarih], map: "idx_giderler_tarihi")
+  @@map("giderler")
+}
+
+model Kasa {
+  kasa_id         Int       @id @default(autoincrement())
+  kullanici_id    Int?
+  islem_turu      String
+  kaynak          String
+  referans_id     Int?
+  tutar           Decimal   @db.Decimal(10, 2)
+  onceki_bakiye   Decimal?  @db.Decimal(10, 2)
+  sonraki_bakiye  Decimal?  @db.Decimal(10, 2)
+  tarih           DateTime  @default(now())
+  aciklama        String?
+  olusturma_tarihi DateTime @default(now())
+
+  kullanici       Kullanici? @relation(fields: [kullanici_id], references: [kullanici_id])
+
+  @@index([tarih], map: "idx_kasa_tarihi")
+  @@map("kasa")
+}
+
+model SistemAyar {
+  ayar_id          Int       @id @default(autoincrement())
+  ayar_adi         String    @unique
+  ayar_degeri      String?
+  aciklama         String?
+  guncelleme_tarihi DateTime @default(now()) @updatedAt
+
+  @@map("sistem_ayarlari")
+}

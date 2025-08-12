@@ -20,7 +20,11 @@ export function signToken(payload: JwtPayload): string {
 
 export function verifyToken(token: string): JwtPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (typeof decoded === 'string') return null;
+    const payload = decoded as Partial<JwtPayload> & { sub?: number };
+    if (!payload.sub || !payload.email || !payload.rol) return null;
+    return { sub: payload.sub, email: payload.email, rol: payload.rol } as JwtPayload;
   } catch {
     return null;
   }
